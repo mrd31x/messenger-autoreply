@@ -1,4 +1,4 @@
-// index.js - Messenger Bot (Render / local ready)
+f// index.js - Messenger Bot (Render / local ready)
 // Requirements: npm install express body-parser axios
 // Put your media list in cloudinary_manifest.json (JSON array of URLs).
 // Environment variables required:
@@ -215,7 +215,7 @@ app.post("/webhook", async (req, res) => {
           }
 
           // send welcome text AFTER media
-          await sendMessage(sender, "Hi! 👋 Thanks for messaging us. We'll get back to you shortly.");
+          await sendMessage(sender, "Hi! 👋 Thanks for messaging us. We’ll get back to you shortly. For faster transactions, please send us your car’s YEAR, MODEL and VARIANT. Thank you! 🚗💨");
 
           // record served timestamp for non-admins
           if (!isAdminSender(sender)) {

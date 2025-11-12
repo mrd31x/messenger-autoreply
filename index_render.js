@@ -1,4 +1,4 @@
-// index_render.js – clean stable Messenger auto-reply (Render-ready, no admin code)
+// index_render.js – Stable v1.1 Messenger auto-reply (Render-ready, 3 media per chunk)
 
 const express = require("express");
 const bodyParser = require("body-parser");
@@ -10,11 +10,11 @@ const app = express();
 app.use(bodyParser.json());
 
 // === CONFIG (set these in Render env vars) ===
-const PAGE_ACCESS_TOKEN = "EAAQ2omfzFccBP1EqtZCGsAvYgQsqsCTEG4fZAUFbKUNXenrNfKBlfr9HnaWZCWuE355E4PodmrItrugB7Y44zGQ8LoDHWsbj4mqB4aYYxHdrjA8tuQ0on6uL1ahmiENXoGar3VrOrlywPr3GW6oFsqy9QutMir8ZBT21b3p4S7PfAYwxD08hBKrQeHpm3R3fec77"|| "";
+const PAGE_ACCESS_TOKEN = "EAAQ2omfzFccBP1EqtZCGsAvYgQsqsCTEG4fZAUFbKUNXenrNfKBlfr9HnaWZCWuE355E4PodmrItrugB7Y44zGQ8LoDHWsbj4mqB4aYYxHdrjA8tuQ0on6uL1ahmiENXoGar3VrOrlywPr3GW6oFsqy9QutMir8ZBT21b3p4S7PfAYwxD08hBKrQeHpm3R3fec77" || "";
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "mybot123";
 const COOLDOWN_DAYS = Number(process.env.COOLDOWN_DAYS || 30);
 const PORT = process.env.PORT || 10000;
-const CHUNK_SIZE = 4; // number of media per carousel
+const CHUNK_SIZE = 3; // ✅ changed from 4 → 3 per carousel
 
 // === DATA FILES ===
 const MANIFEST_PATH = path.join(__dirname, "cloudinary_manifest.json");

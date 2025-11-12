@@ -1,154 +1,108 @@
-// index.js - Messenger Bot (Render / local ready)
-// Requirements: npm install express body-parser axios
-// Put your media list in cloudinary_manifest.json (JSON array of URLs).
-// Environment variables required:
-//   PAGE_ACCESS_TOKEN  (your page token)
-//   VERIFY_TOKEN       (verify token used in FB dashboard)
-// Optional env vars:
-//   COOLDOWN_DAYS      (default 30)
-//   ADMIN_IDS          (comma-separated PSIDs, e.g. "123,456")
-//   RESET_KEY          (secret string to allow hitting /admin/reset)
+/**
+ * index_render.js
+ * Clean Messenger auto-reply bot for Render
+ *
+ * Usage:
+ *  - Set environment variables in Render dashboard (PAGE_ACCESS_TOKEN, VERIFY_TOKEN, ADMIN_IDS, COOLDOWN_DAYS, RESET_KEY, PUBLIC_URL)
+ *  - Start command: node index_render.js
+ *
+ * Security:
+ *  - RESET_KEY protects admin reset endpoints.
+ *  - ADMIN_IDS is a comma-separated list of PSIDs that bypass cooldown (useful for admin testing).
+ */
 
-// ---- imports ----
 const express = require("express");
 const bodyParser = require("body-parser");
 const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
 
-// ---- config ----
-const PORT = process.env.PORT || 3000;
+const app = express();
+app.use(bodyParser.json());
+
+// ---------- Config from environment ----------
 const PAGE_ACCESS_TOKEN = "EAAQ2omfzFccBP1EqtZCGsAvYgQsqsCTEG4fZAUFbKUNXenrNfKBlfr9HnaWZCWuE355E4PodmrItrugB7Y44zGQ8LoDHWsbj4mqB4aYYxHdrjA8tuQ0on6uL1ahmiENXoGar3VrOrlywPr3GW6oFsqy9QutMir8ZBT21b3p4S7PfAYwxD08hBKrQeHpm3R3fec77"|| "";
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "mybot123";
+const ADMIN_IDS = (process.env.ADMIN_IDS || "9873052959403429") // default admin PSID you provided
+  .split(",")
+  .map(s => s.trim())
+  .filter(Boolean);
 const COOLDOWN_DAYS = Number(process.env.COOLDOWN_DAYS || 30);
-const ADMIN_IDS = (process.env.ADMIN_IDS || "").split(",").map(s => s.trim()).filter(Boolean);
-const RESET_KEY = process.env.RESET_KEY || ""; // set a secret to protect /admin/reset
+const RESET_KEY = process.env.RESET_KEY || "reset1531";
+const PUBLIC_URL = process.env.PUBLIC_URL || `http://localhost:${process.env.PORT || 3000}`;
+const MEDIA_FOLDER = path.join(__dirname, "media");
+const CLOUDINARY_MANIFEST = path.join(__dirname, "cloudinary_manifest.json");
+const MEMORY_FILE = path.join(__dirname, "served_users.json");
+const PORT = process.env.PORT || 3000;
 
-if (!PAGE_ACCESS_TOKEN) {
-  console.warn("⚠️ Warning: PAGE_ACCESS_TOKEN not set. Set env var PAGE_ACCESS_TOKEN before deploying.");
-}
+// ---------- Serve local media folder at /media ----------
+app.use("/media", express.static(MEDIA_FOLDER));
 
-// Files
-const SERVED_FILE = path.join(__dirname, "served_users.json");
-const MANIFEST_FILE = path.join(__dirname, "cloudinary_manifest.json");
-
-// ---- helpers: memory file ----
+// ---------- Simple persistent memory (served users) ----------
 let servedUsers = {};
-try {
-  if (fs.existsSync(SERVED_FILE)) {
-    servedUsers = JSON.parse(fs.readFileSync(SERVED_FILE, "utf8") || "{}");
-  } else {
-    fs.writeFileSync(SERVED_FILE, JSON.stringify({}), "utf8");
+function loadServedUsers() {
+  try {
+    if (fs.existsSync(MEMORY_FILE)) {
+      const raw = fs.readFileSync(MEMORY_FILE, "utf8");
+      servedUsers = raw ? JSON.parse(raw) : {};
+    } else {
+      servedUsers = {};
+    }
+  } catch (err) {
+    console.error("Failed to load served users:", err);
     servedUsers = {};
   }
-} catch (e) {
-  console.error("Error loading served_users.json:", e);
-  servedUsers = {};
 }
 function saveServedUsers() {
   try {
-    fs.writeFileSync(SERVED_FILE, JSON.stringify(servedUsers, null, 2), "utf8");
-  } catch (e) {
-    console.error("Error saving served_users.json:", e);
+    fs.writeFileSync(MEMORY_FILE, JSON.stringify(servedUsers, null, 2), "utf8");
+  } catch (err) {
+    console.error("Failed to save served users:", err);
   }
 }
+loadServedUsers();
 
-// ---- helpers: utilities ----
-function chunkArray(arr, size) {
-  const out = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
-function isAdminSender(senderId) {
-  return ADMIN_IDS.includes(String(senderId));
-}
-
-// ---- helpers: messenger send ----
-function sendMessage(senderId, text) {
-  const url = `https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`;
-  const data = {
-    recipient: { id: senderId },
-    message: { text }
-  };
-  return axios.post(url, data).catch(err => {
-    console.error("Unable to send text message:", err.response?.data || err.message);
-  });
-}
-
-async function sendMediaCarousel(senderId, imageUrls = []) {
-  if (!Array.isArray(imageUrls) || imageUrls.length === 0) return;
-  const url = `https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`;
-  // FB generic template has practical limits; use safe chunk size 6
-  const maxChunkSize = 6;
-  const chunks = chunkArray(imageUrls, maxChunkSize);
-
-  for (const chunk of chunks) {
-    const elements = chunk.map((imgUrl, idx) => ({
-      title: `Photo ${idx + 1}`,
-      image_url: imgUrl,
-      default_action: {
-        type: "web_url",
-        url: imgUrl,
-        webview_height_ratio: "tall"
-      }
-    }));
-
-    const payload = {
-      recipient: { id: senderId },
-      message: {
-        attachment: {
-          type: "template",
-          payload: {
-            template_type: "generic",
-            elements
-          }
-        }
-      }
-    };
-
-    try {
-      await axios.post(url, payload);
-      console.log(`✅ sent media carousel chunk (${chunk.length} items) to ${senderId}`);
-      await new Promise(r => setTimeout(r, 400)); // small throttle
-    } catch (err) {
-      console.error("❌ Error sending media template:", err.response?.data || err.message);
-    }
-  }
-}
-
-// ---- load manifest helper ----
-function loadManifestUrls() {
+// ---------- Helper: build media URLs ----------
+function getLocalMediaUrls() {
   try {
-    if (!fs.existsSync(MANIFEST_FILE)) {
-      console.warn("Manifest file not found:", MANIFEST_FILE);
-      return [];
-    }
-    const raw = fs.readFileSync(MANIFEST_FILE, "utf8");
-    const arr = JSON.parse(raw);
-    if (!Array.isArray(arr)) {
-      console.warn("Manifest should be a JSON array of URLs.");
-      return [];
-    }
-    // filter out invalid-looking entries
-    return arr.filter(u => typeof u === "string" && u.startsWith("http"));
-  } catch (e) {
-    console.error("Error loading manifest:", e);
+    if (!fs.existsSync(MEDIA_FOLDER)) return [];
+    const files = fs.readdirSync(MEDIA_FOLDER);
+    // Only include typical media file extensions
+    const allowed = [".jpg", ".jpeg", ".png", ".gif", ".mp4", ".mov", ".webm"];
+    return files
+      .filter(f => allowed.includes(path.extname(f).toLowerCase()))
+      .map(f => `${PUBLIC_URL.replace(/\/$/, "")}/media/${encodeURIComponent(f)}`);
+  } catch (err) {
+    console.error("Error reading media folder:", err);
     return [];
   }
 }
 
-// ---- Express app ----
-const app = express();
-app.use(bodyParser.json());
-// serve local media folder if you keep local files (optional)
-app.use("/media", express.static(path.join(__dirname, "media")));
+function getCloudinaryUrls() {
+  try {
+    if (!fs.existsSync(CLOUDINARY_MANIFEST)) return [];
+    const raw = fs.readFileSync(CLOUDINARY_MANIFEST, "utf8");
+    const arr = JSON.parse(raw);
+    if (Array.isArray(arr)) return arr;
+    return [];
+  } catch (err) {
+    console.error("Error reading cloudinary manifest:", err);
+    return [];
+  }
+}
 
-// verification endpoint for FB
+// Decide preferred media source: if cloudinary_manifest exists, use it; otherwise local folder
+function buildMediaList() {
+  const cloud = getCloudinaryUrls();
+  if (cloud.length) return cloud;
+  return getLocalMediaUrls();
+}
+
+// ---------- Messenger webhook verification ----------
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
-
   if (mode && token) {
     if (mode === "subscribe" && token === VERIFY_TOKEN) {
       console.log("Webhook verified!");
@@ -160,91 +114,144 @@ app.get("/webhook", (req, res) => {
   res.sendStatus(400);
 });
 
-// admin reset endpoint (protected by RESET_KEY) - optional for testing
-// Example: /admin/reset?psid=123456&key=your_reset_key
-app.get("/admin/reset", (req, res) => {
-  const key = req.query.key || "";
-  const psid = req.query.psid;
-  if (!RESET_KEY || key !== RESET_KEY) {
-    return res.status(403).send("Forbidden - invalid reset key");
-  }
-  if (!psid) return res.status(400).send("Missing psid param");
-  if (servedUsers[psid]) {
-    delete servedUsers[psid];
-    saveServedUsers();
-    console.log("Admin reset cleared for", psid);
-    return res.send(`Cleared memory for ${psid}`);
-  }
-  return res.send(`No record for ${psid}`);
-});
-
-// webhook POST handler (incoming messages)
-app.post("/webhook", async (req, res) => {
+// ---------- Send message helpers ----------
+async function callSendAPI(payload) {
+  const url = `https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`;
   try {
-    const body = req.body;
-    if (body.object !== "page") {
-      return res.sendStatus(404);
-    }
+    const resp = await axios.post(url, payload);
+    return resp.data;
+  } catch (err) {
+    console.error("Call to Send API failed:", err.response?.data || err.message);
+    throw err;
+  }
+}
 
-    // load media manifest fresh each event (so you can update urls without restart)
-    const mediaUrls = loadManifestUrls();
+async function sendText(senderId, text) {
+  const payload = {
+    recipient: { id: senderId },
+    message: { text },
+  };
+  await callSendAPI(payload);
+}
 
-    for (const entry of body.entry || []) {
-      const event = (entry.messaging && entry.messaging[0]) || null;
-      if (!event) continue;
+async function sendAttachmentByUrl(senderId, type, url) {
+  // type: "image" | "video" | "audio" | "file"
+  const messageData = {
+    recipient: { id: senderId },
+    message: {
+      attachment: {
+        type,
+        payload: { url, is_reusable: true },
+      },
+    },
+  };
+  await callSendAPI(messageData);
+}
+
+// ---------- Main webhook receiver ----------
+app.post("/webhook", async (req, res) => {
+  const body = req.body;
+  if (body.object !== "page") {
+    return res.sendStatus(404);
+  }
+
+  const mediaList = buildMediaList(); // array of URLs
+
+  body.entry.forEach(async entry => {
+    const messagingEvents = entry.messaging || [];
+    for (const event of messagingEvents) {
+      // ignore echoes
+      if (event.message && event.message.is_echo) continue;
+
       const sender = event.sender && event.sender.id;
       if (!sender) continue;
 
       console.log("Incoming message from:", sender);
 
-      // only handle messages (you can expand to postbacks etc)
-      if (event.message) {
-        // if the message has text or attachments - treat as trigger
-        const now = Date.now();
-        const servedTimestamp = servedUsers[sender] || 0;
-        const cooldownMs = COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
-        const passedCooldown = (now - servedTimestamp) > cooldownMs;
+      // Admin bypass
+      const isAdmin = ADMIN_IDS.includes(String(sender));
+      const cooldownMs = COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
 
-        // Admins bypass memory for testing
-        if (isAdminSender(sender) || !servedUsers[sender] || passedCooldown) {
-          // send carousel grouping of media
-          if (mediaUrls.length > 0) {
-            await sendMediaCarousel(sender, mediaUrls);
-          } else {
-            console.log("No media URLs found to send.");
-          }
+      const lastServed = servedUsers[sender] || 0;
+      const now = Date.now();
+      const withinCooldown = !isAdmin && lastServed && now - lastServed < cooldownMs;
 
-          // send welcome text AFTER media
-          await sendMessage(sender, "Hi! 👋 Thanks for messaging us. We’ll get back to you shortly. For faster transactions, please send us your car’s YEAR, MODEL and VARIANT. Thank you! 🚗💨");
-
-          // record served timestamp for non-admins
-          if (!isAdminSender(sender)) {
-            servedUsers[sender] = Date.now();
-            saveServedUsers();
-          } else {
-            console.log("Admin sender - memory not updated (test mode).");
-          }
+      try {
+        if (withinCooldown) {
+          console.log(`User already served within cooldown, skipping media for: ${sender}`);
+          // Send a short acknowledgment only
+          await sendText(sender, "Thanks — we received your message and will get back to you shortly.");
         } else {
-          console.log("User already served within cooldown, skipping media for:", sender);
-          // optional: send short acknowledgement for repeated messages
-          // await sendMessage(sender, "Thanks — we received your message and will reply shortly.");
+          // Send a brief text first (optional)
+          await sendText(sender, "Hi! Thanks for messaging us — sending our latest photos and videos now...");
+
+          // Send media one-by-one (image/video) sequentially to avoid rate issues
+          for (const mediaUrl of mediaList) {
+            // Determine type from extension
+            const ext = path.extname(mediaUrl).toLowerCase();
+            const type = ext.match(/mp4|mov|webm/) ? "video" : "image";
+            try {
+              await sendAttachmentByUrl(sender, type, mediaUrl);
+              console.log(`✅ Sent ${type}: ${mediaUrl} to ${sender}`);
+            } catch (err) {
+              console.error("Failed to send attachment:", err.response?.data || err.message);
+              // continue to next media instead of stopping
+            }
+            // small delay between sends to be polite and avoid rate limits
+            await new Promise(r => setTimeout(r, 700));
+          }
+
+          // Final welcome/closing message after all media
+          const welcome = `Hi! 👋 Thanks for messaging us.
+Please provide your Car, Year, Model, and Variant so we can assist you faster. We'll get back as soon as possible.`;
+          await sendText(sender, welcome);
+
+          // mark as served
+          servedUsers[sender] = Date.now();
+          saveServedUsers();
+          console.log(`Marked ${sender} as served.`);
         }
+      } catch (err) {
+        console.error("Error while handling message:", err);
       }
     }
+  });
 
-    res.status(200).send("EVENT_RECEIVED");
-  } catch (err) {
-    console.error("Webhook handler error:", err);
-    res.sendStatus(500);
+  res.status(200).send("EVENT_RECEIVED");
+});
+
+// ---------- Admin endpoints ----------
+app.get("/admin/reset", (req, res) => {
+  const { psid, key } = req.query;
+  if (key !== RESET_KEY) return res.status(403).send("Invalid key");
+  if (!psid) return res.send("No PSID provided");
+  if (servedUsers[psid]) {
+    delete servedUsers[psid];
+    saveServedUsers();
+    console.log(`Cleared memory for ${psid}`);
+    return res.send(`Cleared memory for ${psid}`);
+  } else {
+    return res.send(`No record found for ${psid}`);
   }
 });
 
-// root or health check
-app.get("/", (req, res) => {
-  res.send("Messenger bot running.");
+app.get("/admin/reset-all", (req, res) => {
+  const { key } = req.query;
+  if (key !== RESET_KEY) return res.status(403).send("Invalid key");
+  const count = Object.keys(servedUsers).length;
+  servedUsers = {};
+  saveServedUsers();
+  console.log(`✅ Cleared ALL served users memory (${count} entries)`);
+  res.send(`✅ All served users cleared (${count})`);
 });
 
-// start
+// health check
+app.get("/", (req, res) => {
+  res.send("Messenger Autoreply bot is running.");
+});
+
+// Start server
 app.listen(PORT, () => {
   console.log(`✅ Bot server is running on port ${PORT}`);
+  console.log(`Public URL (for local testing formation): ${PUBLIC_URL}`);
 });

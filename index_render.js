@@ -1,4 +1,4 @@
-f// index.js - Messenger Bot (Render / local ready)
+// index.js - Messenger Bot (Render / local ready)
 // Requirements: npm install express body-parser axios
 // Put your media list in cloudinary_manifest.json (JSON array of URLs).
 // Environment variables required:

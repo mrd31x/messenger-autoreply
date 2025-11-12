@@ -1,5 +1,4 @@
-// index_render.js — clean rebuild
-// Render-ready Messenger Bot using Cloudinary media
+// index_render.js – clean stable Messenger auto-reply (Render-ready, no admin code)
 
 const express = require("express");
 const bodyParser = require("body-parser");
@@ -10,177 +9,143 @@ const path = require("path");
 const app = express();
 app.use(bodyParser.json());
 
-// ====== CONFIG ======
-const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN || "";
+// === CONFIG (set these in Render env vars) ===
+const PAGE_ACCESS_TOKEN = "EAAQ2omfzFccBP1EqtZCGsAvYgQsqsCTEG4fZAUFbKUNXenrNfKBlfr9HnaWZCWuE355E4PodmrItrugB7Y44zGQ8LoDHWsbj4mqB4aYYxHdrjA8tuQ0on6uL1ahmiENXoGar3VrOrlywPr3GW6oFsqy9QutMir8ZBT21b3p4S7PfAYwxD08hBKrQeHpm3R3fec77"|| "";
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "mybot123";
-const ADMIN_IDS = (process.env.ADMIN_IDS || "9873052959403429").split(",");
-const RESET_KEY = process.env.RESET_KEY || "reset1531";
-const COOLDOWN_DAYS = 30;
+const COOLDOWN_DAYS = Number(process.env.COOLDOWN_DAYS || 30);
 const PORT = process.env.PORT || 10000;
+const CHUNK_SIZE = 4; // number of media per carousel
 
-// ====== FILE PATHS ======
-const CLOUDINARY_FILE = path.join(__dirname, "cloudinary_manifest.json");
-const MEMORY_FILE = path.join(__dirname, "served_users.json");
+// === DATA FILES ===
+const MANIFEST_PATH = path.join(__dirname, "cloudinary_manifest.json");
+const MEMORY_PATH = path.join(__dirname, "served_users.json");
 
-// ====== MEMORY ======
-let servedUsers = {};
+// Load media URLs
+let mediaUrls = [];
 try {
-  if (fs.existsSync(MEMORY_FILE)) {
-    servedUsers = JSON.parse(fs.readFileSync(MEMORY_FILE, "utf8"));
-  }
-} catch {
-  servedUsers = {};
+  if (fs.existsSync(MANIFEST_PATH)) {
+    mediaUrls = JSON.parse(fs.readFileSync(MANIFEST_PATH, "utf8"));
+    console.log(`✅ Loaded ${mediaUrls.length} media files`);
+  } else console.log("⚠️ cloudinary_manifest.json not found");
+} catch (e) {
+  console.error("❌ Failed to read manifest:", e.message);
 }
 
-// Save memory safely
-function saveMemory() {
-  fs.writeFileSync(MEMORY_FILE, JSON.stringify(servedUsers, null, 2));
-}
+// Load memory (cooldown)
+let served = {};
+try {
+  if (fs.existsSync(MEMORY_PATH))
+    served = JSON.parse(fs.readFileSync(MEMORY_PATH, "utf8"));
+} catch {}
+const saveMemory = () =>
+  fs.writeFileSync(MEMORY_PATH, JSON.stringify(served, null, 2));
 
-// ====== HELPERS ======
-function loadCloudinaryManifest() {
-  try {
-    const data = fs.readFileSync(CLOUDINARY_FILE, "utf8");
-    return JSON.parse(data);
-  } catch {
-    return [];
-  }
-}
+// Dedup recently processed message IDs
+const mids = new Set();
 
-async function callSendAPI(payload) {
+// === HELPERS ===
+async function fbSend(payload) {
   const url = `https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`;
-  await axios.post(url, payload);
+  return axios.post(url, payload);
 }
 
-// ====== MESSAGING FUNCTIONS ======
 async function sendText(psid, text) {
   try {
-    await callSendAPI({ recipient: { id: psid }, message: { text } });
-  } catch (err) {
-    console.error("sendText error:", err.response?.data || err.message);
+    await fbSend({ recipient: { id: psid }, message: { text } });
+    console.log("✅ Sent text to", psid);
+  } catch (e) {
+    console.error("❌ sendText error:", e.response?.data || e.message);
   }
 }
 
-// send images (chunk 3 max), then videos
-async function sendMedia(psid, mediaUrls) {
-  const images = mediaUrls.filter(x => !x.match(/\.(mp4|mov|webm)$/i));
-  const videos = mediaUrls.filter(x => x.match(/\.(mp4|mov|webm)$/i));
-
-  // split images into groups of 3
-  const chunkSize = 3;
-  for (let i = 0; i < images.length; i += chunkSize) {
-    const group = images.slice(i, i + chunkSize);
-    const elements = group.map(url => ({ media_type: "image", image_url: url }));
-    const payload = {
-      recipient: { id: psid },
-      message: {
-        attachment: {
-          type: "template",
-          payload: { template_type: "media", elements },
-        },
-      },
-    };
-    try {
-      await callSendAPI(payload);
-      console.log(`✅ Sent image group (${group.length})`);
-    } catch (e) {
-      console.error("❌ Image send error:", e.response?.data || e.message);
+async function sendChunk(psid, urls) {
+  const elements = urls.map((url, i) => ({
+    title: `Photo ${i + 1}`,
+    image_url: url,
+    default_action: { type: "web_url", url }
+  }));
+  const msg = {
+    recipient: { id: psid },
+    message: {
+      attachment: { type: "template", payload: { template_type: "generic", elements } }
     }
+  };
+  try {
+    await fbSend(msg);
+    console.log(`✅ Sent ${urls.length}-image chunk`);
+  } catch (e) {
+    console.error("❌ Image chunk error:", e.response?.data || e.message);
+    // fallback to single-image sends
+    for (const u of urls) {
+      await fbSend({
+        recipient: { id: psid },
+        message: { attachment: { type: "image", payload: { url: u } } }
+      }).catch(err =>
+        console.error("❌ single image error:", err.response?.data || err.message)
+      );
+      await new Promise(r => setTimeout(r, 800));
+    }
+  }
+}
+
+async function sendAllMedia(psid) {
+  const chunks = [];
+  for (let i = 0; i < mediaUrls.length; i += CHUNK_SIZE)
+    chunks.push(mediaUrls.slice(i, i + CHUNK_SIZE));
+  for (const c of chunks) {
+    await sendChunk(psid, c);
     await new Promise(r => setTimeout(r, 800));
   }
-
-  // videos one by one
-  for (const v of videos) {
-    const payload = {
-      recipient: { id: psid },
-      message: {
-        attachment: {
-          type: "video",
-          payload: { url: v, is_reusable: true },
-        },
-      },
-    };
-    try {
-      await callSendAPI(payload);
-      console.log("✅ Sent video:", v);
-    } catch (e) {
-      console.error("❌ Video send error:", e.response?.data || e.message);
-    }
-    await new Promise(r => setTimeout(r, 1000));
-  }
 }
 
-// ====== WEBHOOK VERIFY ======
+// === WEBHOOKS ===
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
-  if (mode && token && mode === "subscribe" && token === VERIFY_TOKEN) {
-    console.log("Webhook verified.");
-    res.status(200).send(challenge);
-  } else res.sendStatus(403);
+  if (mode === "subscribe" && token === VERIFY_TOKEN) {
+    console.log("✅ Webhook verified");
+    return res.status(200).send(challenge);
+  }
+  res.sendStatus(403);
 });
 
-// ====== MAIN HANDLER ======
-app.post("/webhook", (req, res) => {
-  res.sendStatus(200); // immediate response
+app.post("/webhook", async (req, res) => {
+  res.sendStatus(200);
+  if (req.body.object !== "page") return;
 
-  (async () => {
-    const body = req.body;
-    if (body.object !== "page") return;
+  for (const entry of req.body.entry || []) {
+    for (const ev of entry.messaging || []) {
+      const psid = ev.sender?.id;
+      const mid = ev.message?.mid;
+      if (!psid || mids.has(mid)) continue;
+      mids.add(mid);
 
-    const now = Date.now();
-    const cooldownMs = COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
-    const mediaUrls = loadCloudinaryManifest();
+      if (!ev.message || ev.message.is_echo) continue;
+      console.log("💬 Incoming from:", psid);
 
-    for (const entry of body.entry) {
-      for (const event of entry.messaging) {
-        if (!event.sender || !event.sender.id) continue;
-        const psid = event.sender.id;
-        const lastServed = servedUsers[psid] || 0;
-        const isAdmin = ADMIN_IDS.includes(psid);
-        const withinCooldown = !isAdmin && now - lastServed < cooldownMs;
+      const now = Date.now();
+      const last = served[psid] || 0;
+      const cooldown = COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
 
-        if (withinCooldown) {
-          console.log(`Cooldown active for ${psid}`);
-          return;
-        }
-
-        servedUsers[psid] = now;
-        saveMemory();
-
-        await sendMedia(psid, mediaUrls);
-        await sendText(
-          psid,
-          "Hi! 👋 Thanks for messaging us.\nPlease provide your Car, Year, Model, and Variant so we can assist you faster."
-        );
+      if (now - last < cooldown) {
+        console.log("⏱ Still in cooldown, skipping media for", psid);
+        continue;
       }
+
+      served[psid] = now;
+      saveMemory();
+
+      await sendAllMedia(psid);
+      await sendText(
+        psid,
+        "Hi! 👋 Thanks for messaging us.\nPlease provide your Car, Year, Model, and Variant so we can assist you faster."
+      );
     }
-  })();
+  }
 });
 
-// ====== ADMIN RESET ======
-app.get("/admin/reset", (req, res) => {
-  const { psid, key } = req.query;
-  if (key !== RESET_KEY) return res.status(403).send("Invalid key");
-  delete servedUsers[psid];
-  saveMemory();
-  res.send(`✅ Memory cleared for ${psid}`);
-});
+// === HEALTH ===
+app.get("/", (req, res) => res.send("✅ Messenger bot running"));
 
-app.get("/admin/reset-all", (req, res) => {
-  const { key } = req.query;
-  if (key !== RESET_KEY) return res.status(403).send("Invalid key");
-  servedUsers = {};
-  saveMemory();
-  res.send("✅ All users cleared");
-});
-
-// ====== HEALTH ======
-app.get("/", (req, res) => res.send("✅ Messenger bot is running fine"));
-
-// ====== START SERVER ======
-app.listen(PORT, () => {
-  console.log(`✅ Bot running on port ${PORT}`);
-  console.log(`✅ Loaded ${loadCloudinaryManifest().length} Cloudinary media files`);
-});
+app.listen(PORT, () => console.log(`🚀 Bot live on port ${PORT}`));

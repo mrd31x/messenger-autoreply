@@ -1,4 +1,4 @@
-// index_render.js – Clean stable Messenger auto-reply (Render-ready + admin reset routes + quick replies)
+// index_render.js – Render-ready with multiline replies (uses template literals)
 
 const express = require("express");
 const bodyParser = require("body-parser");
@@ -11,13 +11,13 @@ app.use(bodyParser.json());
 
 // === CONFIG ===
 const PAGE_ACCESS_TOKEN =
-  "EAAQ2omfzFccBP1EqtZCGsAvYgQsqsCTEG4fZAUFbKUNXenrNfKBlfr9HnaWZCWuE355E4PodmrItrugB7Y44zGQ8LoDHWsbj4mqB4aYYxHdrjA8tuQ0on6uL1ahmiENXoGar3VrOrlywPr3GW6oFsqy9QutMir8ZBT21b3p4S7PfAYwxD08hBKrQeHpm3R3fec77"; 
+  "EAAQ2omfzFccBP1EqtZCGsAvYgQsqsCTEG4fZAUFbKUNXenrNfKBlfr9HnaWZCWuE355E4PodmrItrugB7Y44zGQ8LoDHWsbj4mqB4aYYxHdrjA8tuQ0on6uL1ahmiENXoGar3VrOrlywPr3GW6oFsqy9QutMir8ZBT21b3p4S7PfAYwxD08hBKrQeHpm3R3fec77";
 const VERIFY_TOKEN = "mybot123";
 const ADMIN_RESET_KEY = "reset1531";
 const COOLDOWN_DAYS = 30;
 const FOLLOWUP_HOURS = 12;
 const PORT = process.env.PORT || 10000;
-const CHUNK_SIZE = 3; // number of media per carousel
+const CHUNK_SIZE = 3;
 
 // === FILE PATHS ===
 const MANIFEST_PATH = path.join(__dirname, "cloudinary_manifest.json");
@@ -46,53 +46,52 @@ const saveMemory = () =>
 // Deduplicate message IDs
 const mids = new Set();
 
-// === PLACEHOLDERS: fill these strings with your desired auto-replies ===
-const REPLY_HOW_TO_ORDER = "Hi! 
-Here’s how to order 
+// === PLACEHOLDERS (multiline strings use backticks) ===
+const REPLY_HOW_TO_ORDER = `Hi! 😊
+Here’s how to order:
 
 🚚 Shipping via LBC
-💳Payment Options:
-• COP – Pay at LBC branch when you pick up your package
-• COD – Pay to the rider upon delivery
 
-💸Shipping Fee:
+💳 Payment Options:
+• COP — Pay at LBC branch when you pick up your package
+• COD — Pay the rider upon delivery
+
+💸 Shipping Fee (approx):
 COP ₱120–₱150 | COD ₱185–₱230
 (depends on location & package size)
 
-Please send your:
-Name
-Contact No.
-Address 
-Zip Code
-LBC Branch (for COP)
+Please send:
+• Name
+• Contact No.
+• Address
+• Zip Code
+• LBC Branch (for COP)
 
 Once details are complete, we’ll confirm your order right away.
-Thank you! 🙏";
-const REPLY_HOW_MUCH_H4 = "H4 Type Led Bulb
+Thank you! 🙏`;
 
-P2,495 / pair
+const REPLY_HOW_MUCH_H4 = `Our H4 bulbs start at ₱XXX. Please tell us which car model and year for exact fit and price.`;
 
-Product Specs:
-120W | 30,000 Lumens | IP67 Waterproof | Canbus Ready | 360° Adjustable | 50,000 hrs lifespan
+const REPLY_PRODUCT_SPECS = `Product specs:
+• Type: H4
+• Wattage: 55W
+• Color temp: 6000K (example)
+• Lifespan: 20,000 hours
+(Adjust to your real specs)`;
 
-✅ Super bright, durable, waterproof & easy to install!";
-const REPLY_PRODUCT_SPECS = "Product Specs:
-Power: 120W / 30,000 Lumens
-Voltage: 9V–36V (fits most vehicles)
-Waterproof: IP67
-Material: Aviation Aluminum + Copper PCB
-Rotation: 360° Adjustable
-Temp Range: -40°C to 180°C
-Lifespan: Up to 50,000 hours
-Super Heat Dissipation
-Canbus Ready (No Error)
-Easy, Nondestructive Installation
+const REPLY_INSTALLATION = `Installation (quick guide):
+1. Turn off the engine and lights.
+2. Open headlamp housing.
+3. Remove old bulb carefully.
+4. Insert new bulb, secure clip, test lights.
+If unsure, please have a mechanic install it for you.`;
 
-✅ High brightness, durable, waterproof & all-weather ready!
-";
-const REPLY_INSTALLATION = "a";
-const REPLY_LOCATION = "b";
-const WELCOME_MESSAGE = "c";
+const REPLY_LOCATION = `We are located at: Your Shop Address
+Business hours: Mon–Sat 9:00–18:00
+Contact: 0917-XXX-XXXX`;
+
+const WELCOME_MESSAGE = `Hi! 👋 Thanks for messaging us.
+Please provide your Car, Year, Model, and Variant so we can assist you faster.`;
 
 // === HELPERS ===
 async function fbSend(payload) {
@@ -128,6 +127,7 @@ async function sendChunk(psid, urls) {
     console.log(`✅ Sent ${urls.length}-item chunk`);
   } catch (e) {
     console.error("❌ Image chunk error:", e.response?.data || e.message);
+    // fallback: send individually
     for (const u of urls) {
       await fbSend({
         recipient: { id: psid },
@@ -180,9 +180,9 @@ app.post("/webhook", async (req, res) => {
       if (!ev.message || ev.message.is_echo) continue;
       console.log("💬 Incoming from:", psid);
 
+      // quick reply payloads
       const quickPayload = ev.message?.quick_reply?.payload;
       if (quickPayload) {
-        console.log("🎯 Quick reply payload:", quickPayload);
         if (quickPayload === "HOW_TO_ORDER") return sendText(psid, REPLY_HOW_TO_ORDER);
         if (quickPayload === "HOW_MUCH_H4") return sendText(psid, REPLY_HOW_MUCH_H4);
         if (quickPayload === "PRODUCT_SPECS") return sendText(psid, REPLY_PRODUCT_SPECS);
@@ -209,7 +209,9 @@ app.post("/webhook", async (req, res) => {
           served[psid] = user;
           saveMemory();
           console.log("📩 Sent follow-up message to", psid);
-        } else console.log("⏱ Still in cooldown, skipping media for", psid);
+        } else {
+          console.log("⏱ Still in cooldown, skipping media for", psid);
+        }
         continue;
       }
 
@@ -219,6 +221,7 @@ app.post("/webhook", async (req, res) => {
       saveMemory();
 
       await sendAllMedia(psid);
+
       if (WELCOME_MESSAGE && WELCOME_MESSAGE.length) {
         await sendText(psid, WELCOME_MESSAGE);
       }

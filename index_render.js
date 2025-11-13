@@ -1,5 +1,7 @@
 // index_render.js – Clean stable Messenger auto-reply (Render-ready + admin reset routes + quick replies)
 // Includes: resend quick-reply list after each reply (so options remain visible)
+// Added: smart typing indicator + small delays for more natural feel
+// Typing timing: 40 ms per character, min 700 ms, max 40,000 ms
 
 const express = require("express");
 const bodyParser = require("body-parser");
@@ -125,6 +127,35 @@ async function sendText(psid, text) {
   }
 }
 
+// --- Typing helpers ---
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function sendTyping(psid, ms = 1200) {
+  try {
+    await fbSend({ recipient: { id: psid }, sender_action: "typing_on" });
+    await sleep(ms);
+    await fbSend({ recipient: { id: psid }, sender_action: "typing_off" });
+  } catch (e) {
+    console.error("❌ sendTyping error:", e.response?.data || e.message);
+  }
+}
+
+// Smart typing based on message length (40 ms per char, min 700ms, max 40000ms)
+async function sendSmartTyping(psid, text) {
+  try {
+    const chars = (text || "").length;
+    // 40 ms per char, min 700ms, max 40000ms (40 seconds)
+    const ms = Math.min(40000, Math.max(700, Math.round(chars * 40)));
+    await sendTyping(psid, ms);
+  } catch (e) {
+    console.error("❌ sendSmartTyping error:", e.response?.data || e.message);
+    // fallback to short typing
+    await sendTyping(psid, 900);
+  }
+}
+
 // send quick-reply list helper (keeps options visible after replies)
 async function sendQuickRepliesList(psid) {
   const quickReplies = {
@@ -178,7 +209,7 @@ async function sendChunk(psid, urls) {
           },
         },
       }).catch((err) => console.error("❌ single media error:", err.response?.data || err.message));
-      await new Promise((r) => setTimeout(r, 800));
+      await sleep(800);
     }
   }
 }
@@ -187,8 +218,10 @@ async function sendAllMedia(psid) {
   const chunks = [];
   for (let i = 0; i < mediaUrls.length; i += CHUNK_SIZE) chunks.push(mediaUrls.slice(i, i + CHUNK_SIZE));
   for (const c of chunks) {
+    // show typing briefly before each media chunk to feel natural
+    await sendTyping(psid, 700);
     await sendChunk(psid, c);
-    await new Promise((r) => setTimeout(r, 800));
+    await sleep(800);
   }
 }
 
@@ -223,27 +256,37 @@ app.post("/webhook", async (req, res) => {
         console.log("🎯 Quick reply payload:", quickPayload);
 
         if (quickPayload === "HOW_TO_ORDER") {
+          await sendSmartTyping(psid, REPLY_HOW_TO_ORDER);
           await sendText(psid, REPLY_HOW_TO_ORDER);
+          await sleep(350);
           await sendQuickRepliesList(psid);
           continue;
         }
         if (quickPayload === "HOW_MUCH_H4") {
+          await sendSmartTyping(psid, REPLY_HOW_MUCH_H4);
           await sendText(psid, REPLY_HOW_MUCH_H4);
+          await sleep(300);
           await sendQuickRepliesList(psid);
           continue;
         }
         if (quickPayload === "PRODUCT_SPECS") {
+          await sendSmartTyping(psid, REPLY_PRODUCT_SPECS);
           await sendText(psid, REPLY_PRODUCT_SPECS);
+          await sleep(300);
           await sendQuickRepliesList(psid);
           continue;
         }
         if (quickPayload === "INSTALLATION") {
+          await sendSmartTyping(psid, REPLY_INSTALLATION);
           await sendText(psid, REPLY_INSTALLATION);
+          await sleep(350);
           await sendQuickRepliesList(psid);
           continue;
         }
         if (quickPayload === "LOCATION") {
+          await sendSmartTyping(psid, REPLY_LOCATION);
           await sendText(psid, REPLY_LOCATION);
+          await sleep(300);
           await sendQuickRepliesList(psid);
           continue;
         }
@@ -252,27 +295,37 @@ app.post("/webhook", async (req, res) => {
       // ---------- keyword triggers (also resend quick replies) ----------
       const text = ev.message?.text?.toLowerCase?.() || "";
       if (text.includes("how to order")) {
+        await sendSmartTyping(psid, REPLY_HOW_TO_ORDER);
         await sendText(psid, REPLY_HOW_TO_ORDER);
+        await sleep(350);
         await sendQuickRepliesList(psid);
         continue;
       }
       if (text.includes("how much h4")) {
+        await sendSmartTyping(psid, REPLY_HOW_MUCH_H4);
         await sendText(psid, REPLY_HOW_MUCH_H4);
+        await sleep(300);
         await sendQuickRepliesList(psid);
         continue;
       }
       if (text.includes("product specs")) {
+        await sendSmartTyping(psid, REPLY_PRODUCT_SPECS);
         await sendText(psid, REPLY_PRODUCT_SPECS);
+        await sleep(300);
         await sendQuickRepliesList(psid);
         continue;
       }
       if (text.includes("install")) {
+        await sendSmartTyping(psid, REPLY_INSTALLATION);
         await sendText(psid, REPLY_INSTALLATION);
+        await sleep(350);
         await sendQuickRepliesList(psid);
         continue;
       }
       if (text.includes("location")) {
+        await sendSmartTyping(psid, REPLY_LOCATION);
         await sendText(psid, REPLY_LOCATION);
+        await sleep(300);
         await sendQuickRepliesList(psid);
         continue;
       }
@@ -285,6 +338,7 @@ app.post("/webhook", async (req, res) => {
 
       if (now - user.lastMedia < cooldown) {
         if (now - user.lastFollowup >= followupWindow) {
+          await sendSmartTyping(psid, "We will get back to you as soon as we can. Thank you!");
           await sendText(psid, "We will get back to you as soon as we can. Thank you!");
           user.lastFollowup = now;
           served[psid] = user;
@@ -307,10 +361,12 @@ app.post("/webhook", async (req, res) => {
 
       // send welcome message after media (if set)
       if (WELCOME_MESSAGE && WELCOME_MESSAGE.length) {
+        await sendSmartTyping(psid, WELCOME_MESSAGE);
         await sendText(psid, WELCOME_MESSAGE);
       }
 
       // finally show quick replies (so they see options right away)
+      await sleep(250);
       await sendQuickRepliesList(psid);
     }
   }

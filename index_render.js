@@ -69,22 +69,43 @@ Please send:
 Once details are complete, we’ll confirm your order right away.
 Thank you! 🙏`;
 
-const REPLY_HOW_MUCH_H4 = `Our H4 bulbs start at ₱XXX. Please tell us your car model and year for an exact fit and price.`;
-const REPLY_PRODUCT_SPECS = `Product specs:
-• Type: H4
-• Wattage: 55W
-• Color temp: 6000K (example)
-• Lifespan: 20,000 hours
-(Adjust to your real specs)`;
-const REPLY_INSTALLATION = `Installation (quick guide):
-1. Turn off the engine and lights.
-2. Open headlamp housing.
-3. Remove old bulb carefully.
-4. Insert new bulb, secure clip, test lights.
-If unsure, please have a mechanic install it for you.`;
-const REPLY_LOCATION = `We are located at: Your Shop Address
-Business hours: Mon–Sat 9:00–18:00
-Contact: 0917-XXX-XXXX`;
+const REPLY_HOW_MUCH_H4 = `H4 Type Led Bulb
+
+P2,495 / pair
+
+Product Specs:
+120W | 30,000 Lumens | IP67 Waterproof | Canbus Ready | 360° Adjustable | 50,000 hrs lifespan
+
+✅ Super bright, durable, waterproof & easy to install!`;
+const REPLY_PRODUCT_SPECS = `Product Specs:
+Power: 120W / 30,000 Lumens
+Voltage: 9V–36V (fits most vehicles)
+Waterproof: IP67
+Material: Aviation Aluminum + Copper PCB
+Rotation: 360° Adjustable
+Temp Range: -40°C to 180°C
+Lifespan: Up to 50,000 hours
+Super Heat Dissipation
+Canbus Ready (No Error)
+Easy, Nondestructive Installation
+
+✅ High brightness, durable, waterproof & all-weather ready!
+`;
+const REPLY_INSTALLATION = `We offer FREE installation po if you’re within our area.
+For shipping naman po, we have COD/COP via LBC, and we also send a video installation guide for easy setup. `;
+const REPLY_LOCATION = `📍 We’re based in Iloilo po!
+We’re the main distributor of AD LED nationwide.
+
+Direct from manufacturer — kaya mas mura kahit high-end specs pa ang mga products namin!
+
+We also have resellers in some parts of the Philippines, pero higher price na po compared to us.
+
+We offer home service installation within nearby areas,
+and Cash on Delivery (COD) via LBC for provincial and far locations.
+
+Marami na rin po kaming customers from Luzon, NCR and Manila pa po mismo — kasi mas mahal daw po mga LED sa shops doon.😅
+
+Saan po location nyo boss? ☺️`;
 
 const WELCOME_MESSAGE = `Hi! 👋 Thanks for messaging us.
 Please provide your Car, Year, Model, and Variant so we can assist you faster.`;

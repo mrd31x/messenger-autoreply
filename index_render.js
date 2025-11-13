@@ -90,9 +90,9 @@ Easy, Nondestructive Installation
 
 ✅ High brightness, durable, waterproof & all-weather ready!
 ";
-const REPLY_INSTALLATION = "";
-const REPLY_LOCATION = "";
-const WELCOME_MESSAGE = "";
+const REPLY_INSTALLATION = "a";
+const REPLY_LOCATION = "b";
+const WELCOME_MESSAGE = "c";
 
 // === HELPERS ===
 async function fbSend(payload) {

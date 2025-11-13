@@ -1,7 +1,10 @@
-// index_render.js – Clean stable Messenger auto-reply (Render-ready + admin reset routes + quick replies)
-// Includes: resend quick-reply list after each reply (so options remain visible)
-// Added: smart typing indicator + small delays for more natural feel
-// Typing timing: 40 ms per character, min 700 ms, max 40,000 ms
+// index_render.js – Complete clean Messenger auto-reply (Render-ready)
+// - Quick replies (includes "Price other bulb types")
+// - Smart typing: 40 ms/char, min 700ms, max 40000ms
+// - Media chunks (CHUNK_SIZE = 3)
+// - Cooldown: media once per COOLDOWN_DAYS, follow-up once per FOLLOWUP_HOURS
+// - Admin reset routes
+// Paste this file into your render project (replace existing) or run locally with node.
 
 const express = require("express");
 const bodyParser = require("body-parser");
@@ -12,42 +15,56 @@ const path = require("path");
 const app = express();
 app.use(bodyParser.json());
 
-// === CONFIG ===
+// === CONFIG - paste your Page Access Token here or set via env var ===
 const PAGE_ACCESS_TOKEN =
+  process.env.PAGE_ACCESS_TOKEN ||
   "EAAQ2omfzFccBP1EqtZCGsAvYgQsqsCTEG4fZAUFbKUNXenrNfKBlfr9HnaWZCWuE355E4PodmrItrugB7Y44zGQ8LoDHWsbj4mqB4aYYxHdrjA8tuQ0on6uL1ahmiENXoGar3VrOrlywPr3GW6oFsqy9QutMir8ZBT21b3p4S7PfAYwxD08hBKrQeHpm3R3fec77";
+
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "mybot123";
 const ADMIN_RESET_KEY = process.env.ADMIN_RESET_KEY || "reset1531";
-const COOLDOWN_DAYS = Number(process.env.COOLDOWN_DAYS || 30);
-const FOLLOWUP_HOURS = Number(process.env.FOLLOWUP_HOURS || 12);
+const COOLDOWN_DAYS = Number(process.env.COOLDOWN_DAYS || 30); // media cooldown
+const FOLLOWUP_HOURS = Number(process.env.FOLLOWUP_HOURS || 12); // follow-up cooldown
 const PORT = process.env.PORT || 10000;
-const CHUNK_SIZE = 3; // number of media per carousel
+const CHUNK_SIZE = Number(process.env.CHUNK_SIZE || 3); // media per carousel chunk
 
 // === FILE PATHS ===
 const MANIFEST_PATH = path.join(__dirname, "cloudinary_manifest.json");
 const MEMORY_PATH = path.join(__dirname, "served_users.json");
 
-// === LOAD MEDIA ===
+// === LOAD MEDIA LIST ===
 let mediaUrls = [];
 try {
   if (fs.existsSync(MANIFEST_PATH)) {
     mediaUrls = JSON.parse(fs.readFileSync(MANIFEST_PATH, "utf8"));
     console.log(`✅ Loaded ${mediaUrls.length} Cloudinary media files`);
-  } else console.log("⚠️ cloudinary_manifest.json not found");
+  } else {
+    console.log("⚠️ cloudinary_manifest.json not found (no media loaded)");
+  }
 } catch (e) {
-  console.error("❌ Failed to load media manifest:", e.message);
+  console.error("❌ Failed to read cloudinary_manifest.json:", e.message);
 }
 
-// === LOAD MEMORY ===
+// === LOAD MEMORY (served users) ===
 let served = {};
 try {
-  if (fs.existsSync(MEMORY_PATH)) served = JSON.parse(fs.readFileSync(MEMORY_PATH, "utf8"));
-} catch (e) {}
-const saveMemory = () => fs.writeFileSync(MEMORY_PATH, JSON.stringify(served, null, 2));
+  if (fs.existsSync(MEMORY_PATH)) {
+    served = JSON.parse(fs.readFileSync(MEMORY_PATH, "utf8"));
+  }
+} catch (e) {
+  console.error("❌ Failed to load served_users.json:", e.message);
+}
+const saveMemory = () => {
+  try {
+    fs.writeFileSync(MEMORY_PATH, JSON.stringify(served, null, 2));
+  } catch (e) {
+    console.error("❌ Failed to save memory:", e.message);
+  }
+};
 
-// Deduplicate message IDs
+// Deduplicate incoming message ids
 const mids = new Set();
 
-// === REPLY TEXTS (multiline using backticks) ===
+// === REPLY TEXTS (multiline strings) ===
 const REPLY_HOW_TO_ORDER = `Hi! 😊
 Here’s how to order:
 
@@ -79,6 +96,30 @@ Product Specs:
 120W | 30,000 Lumens | IP67 Waterproof | Canbus Ready | 360° Adjustable | 50,000 hrs lifespan
 
 ✅ Super bright, durable, waterproof & easy to install!`;
+
+// <-- NEW placeholder for "Price other bulb types" - put your reply inside backticks -->
+const REPLY_PRICE_OTHER_TYPES = `💡 For Other Bulb Types / Single Beam Bulbs:
+
+🔥 P2,395 / pair
+30,000 Lumens (Best Seller)
+Available: H11, HB3, 9005, 9006, 9012, H7, H1, H3, H27, etc.
+
+💸 Budget Variant (12K–15K Lumens):
+P1,195 – P1,495 / pair
+Limited bulb types available
+
+Small Bulbs:
+• T10 – P400/pair
+• Festoon 31mm – P350/pc
+• T15 / T20 / 1156 / 1157 / 7440 / 7443 – P450/pair
+
+🎉 Promo Packages Available:
+We also offer promo bundles when you order as a set, e.g.:
+• Headlight + Fog Lights
+• Headlight + Park Lights
+
+💬 Just send us a message and we’ll give you the specific promotional offer available for your bulb type.`;
+
 const REPLY_PRODUCT_SPECS = `Product Specs:
 Power: 120W / 30,000 Lumens
 Voltage: 9V–36V (fits most vehicles)
@@ -93,26 +134,19 @@ Easy, Nondestructive Installation
 
 ✅ High brightness, durable, waterproof & all-weather ready!
 `;
+
 const REPLY_INSTALLATION = `We offer FREE installation po if you’re within our area.
-For shipping naman po, we have COD/COP via LBC, and we also send a video installation guide for easy setup. `;
+For shipping naman po, we have COD/COP via LBC, and we also send a video installation guide for easy setup.`;
+
 const REPLY_LOCATION = `📍 We’re based in Iloilo po!
 We’re the main distributor of AD LED nationwide.
 
-Direct from manufacturer — kaya mas mura kahit high-end specs pa ang mga products namin!
-
-We also have resellers in some parts of the Philippines, pero higher price na po compared to us.
-
-We offer home service installation within nearby areas,
-and Cash on Delivery (COD) via LBC for provincial and far locations.
-
-Marami na rin po kaming customers from Luzon, NCR and Manila pa po mismo — kasi mas mahal daw po mga LED sa shops doon.😅
-
-Saan po location nyo boss? ☺️`;
+Direct from manufacturer — kaya mas mura kahit high-end specs pa ang mga products namin!`;
 
 const WELCOME_MESSAGE = `Hi! 👋 Thanks for messaging us.
 Please provide your Car, Year, Model, and Variant so we can assist you faster.`;
 
-// === HELPERS ===
+// === FACEBOOK SEND HELPERS ===
 async function fbSend(payload) {
   const url = `https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`;
   return axios.post(url, payload);
@@ -127,11 +161,10 @@ async function sendText(psid, text) {
   }
 }
 
-// --- Typing helpers ---
+// typing helpers
 function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((res) => setTimeout(res, ms));
 }
-
 async function sendTyping(psid, ms = 1200) {
   try {
     await fbSend({ recipient: { id: psid }, sender_action: "typing_on" });
@@ -141,22 +174,20 @@ async function sendTyping(psid, ms = 1200) {
     console.error("❌ sendTyping error:", e.response?.data || e.message);
   }
 }
-
-// Smart typing based on message length (40 ms per char, min 700ms, max 40000ms)
 async function sendSmartTyping(psid, text) {
   try {
     const chars = (text || "").length;
-    // 40 ms per char, min 700ms, max 40000ms (40 seconds)
+    // 40 ms/char, min 700ms, max 40000ms
     const ms = Math.min(40000, Math.max(700, Math.round(chars * 40)));
+    console.log(`🕑 Typing for ${ms}ms (chars=${chars})`);
     await sendTyping(psid, ms);
   } catch (e) {
     console.error("❌ sendSmartTyping error:", e.response?.data || e.message);
-    // fallback to short typing
     await sendTyping(psid, 900);
   }
 }
 
-// send quick-reply list helper (keeps options visible after replies)
+// quick replies helper (includes new option)
 async function sendQuickRepliesList(psid) {
   const quickReplies = {
     recipient: { id: psid },
@@ -165,6 +196,7 @@ async function sendQuickRepliesList(psid) {
       quick_replies: [
         { content_type: "text", title: "How to order?", payload: "HOW_TO_ORDER" },
         { content_type: "text", title: "How much H4?", payload: "HOW_MUCH_H4" },
+        { content_type: "text", title: "Price other bulb types", payload: "PRICE_OTHER_TYPES" },
         { content_type: "text", title: "Product specs?", payload: "PRODUCT_SPECS" },
         { content_type: "text", title: "Installation?", payload: "INSTALLATION" },
         { content_type: "text", title: "Location?", payload: "LOCATION" },
@@ -179,6 +211,7 @@ async function sendQuickRepliesList(psid) {
   }
 }
 
+// media chunk sender (generic template)
 async function sendChunk(psid, urls) {
   const elements = urls.map((url, i) => ({
     title: url.endsWith(".mp4") ? `Video ${i + 1}` : `Photo ${i + 1}`,
@@ -195,30 +228,33 @@ async function sendChunk(psid, urls) {
 
   try {
     await fbSend(msg);
-    console.log(`✅ Sent ${urls.length}-item chunk`);
+    console.log(`✅ Sent ${urls.length}-item chunk to ${psid}`);
   } catch (e) {
     console.error("❌ Image chunk error:", e.response?.data || e.message);
-    // fallback: send individually
+    // fallback: send individually (image or video)
     for (const u of urls) {
-      await fbSend({
-        recipient: { id: psid },
-        message: {
-          attachment: {
-            type: u.endsWith(".mp4") ? "video" : "image",
-            payload: { url: u },
+      try {
+        await fbSend({
+          recipient: { id: psid },
+          message: {
+            attachment: { type: u.endsWith(".mp4") ? "video" : "image", payload: { url: u } },
           },
-        },
-      }).catch((err) => console.error("❌ single media error:", err.response?.data || err.message));
-      await sleep(800);
+        });
+        await sleep(400);
+      } catch (err) {
+        console.error("❌ single media error:", err.response?.data || err.message);
+      }
     }
   }
 }
 
 async function sendAllMedia(psid) {
+  if (!mediaUrls || mediaUrls.length === 0) return;
   const chunks = [];
-  for (let i = 0; i < mediaUrls.length; i += CHUNK_SIZE) chunks.push(mediaUrls.slice(i, i + CHUNK_SIZE));
+  for (let i = 0; i < mediaUrls.length; i += CHUNK_SIZE) {
+    chunks.push(mediaUrls.slice(i, i + CHUNK_SIZE));
+  }
   for (const c of chunks) {
-    // show typing briefly before each media chunk to feel natural
     await sendTyping(psid, 700);
     await sendChunk(psid, c);
     await sleep(800);
@@ -238,6 +274,7 @@ app.get("/webhook", (req, res) => {
 });
 
 app.post("/webhook", async (req, res) => {
+  // respond quickly to FB
   res.sendStatus(200);
   if (req.body.object !== "page") return;
 
@@ -245,26 +282,32 @@ app.post("/webhook", async (req, res) => {
     for (const ev of entry.messaging || []) {
       const psid = ev.sender?.id;
       const mid = ev.message?.mid;
-      if (!psid || mids.has(mid)) continue;
-      mids.add(mid);
+      if (!psid || (mid && mids.has(mid))) continue;
+      if (mid) mids.add(mid);
       if (!ev.message || ev.message.is_echo) continue;
       console.log("💬 Incoming from:", psid);
 
-      // ---------- quick-reply payload handling ----------
+      // quick-reply payload handling
       const quickPayload = ev.message?.quick_reply?.payload;
       if (quickPayload) {
         console.log("🎯 Quick reply payload:", quickPayload);
-
         if (quickPayload === "HOW_TO_ORDER") {
           await sendSmartTyping(psid, REPLY_HOW_TO_ORDER);
           await sendText(psid, REPLY_HOW_TO_ORDER);
-          await sleep(350);
+          await sleep(300);
           await sendQuickRepliesList(psid);
           continue;
         }
         if (quickPayload === "HOW_MUCH_H4") {
           await sendSmartTyping(psid, REPLY_HOW_MUCH_H4);
           await sendText(psid, REPLY_HOW_MUCH_H4);
+          await sleep(300);
+          await sendQuickRepliesList(psid);
+          continue;
+        }
+        if (quickPayload === "PRICE_OTHER_TYPES") {
+          await sendSmartTyping(psid, REPLY_PRICE_OTHER_TYPES);
+          await sendText(psid, REPLY_PRICE_OTHER_TYPES);
           await sleep(300);
           await sendQuickRepliesList(psid);
           continue;
@@ -279,7 +322,7 @@ app.post("/webhook", async (req, res) => {
         if (quickPayload === "INSTALLATION") {
           await sendSmartTyping(psid, REPLY_INSTALLATION);
           await sendText(psid, REPLY_INSTALLATION);
-          await sleep(350);
+          await sleep(300);
           await sendQuickRepliesList(psid);
           continue;
         }
@@ -292,18 +335,25 @@ app.post("/webhook", async (req, res) => {
         }
       }
 
-      // ---------- keyword triggers (also resend quick replies) ----------
-      const text = ev.message?.text?.toLowerCase?.() || "";
+      // text keyword triggers (also resend quick replies)
+      const text = (ev.message?.text || "").toLowerCase();
       if (text.includes("how to order")) {
         await sendSmartTyping(psid, REPLY_HOW_TO_ORDER);
         await sendText(psid, REPLY_HOW_TO_ORDER);
-        await sleep(350);
+        await sleep(300);
         await sendQuickRepliesList(psid);
         continue;
       }
       if (text.includes("how much h4")) {
         await sendSmartTyping(psid, REPLY_HOW_MUCH_H4);
         await sendText(psid, REPLY_HOW_MUCH_H4);
+        await sleep(300);
+        await sendQuickRepliesList(psid);
+        continue;
+      }
+      if (text.includes("other bulb") || text.includes("price other")) {
+        await sendSmartTyping(psid, REPLY_PRICE_OTHER_TYPES);
+        await sendText(psid, REPLY_PRICE_OTHER_TYPES);
         await sleep(300);
         await sendQuickRepliesList(psid);
         continue;
@@ -318,7 +368,7 @@ app.post("/webhook", async (req, res) => {
       if (text.includes("install")) {
         await sendSmartTyping(psid, REPLY_INSTALLATION);
         await sendText(psid, REPLY_INSTALLATION);
-        await sleep(350);
+        await sleep(300);
         await sendQuickRepliesList(psid);
         continue;
       }
@@ -336,36 +386,36 @@ app.post("/webhook", async (req, res) => {
       const cooldown = COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
       const followupWindow = FOLLOWUP_HOURS * 60 * 60 * 1000;
 
+      // if still within media cooldown
       if (now - user.lastMedia < cooldown) {
+        // maybe send follow-up (12hr) if allowed
         if (now - user.lastFollowup >= followupWindow) {
-          await sendSmartTyping(psid, "We will get back to you as soon as we can. Thank you!");
-          await sendText(psid, "We will get back to you as soon as we can. Thank you!");
+          const followText = "We will get back to you as soon as we can. Thank you!";
+          await sendSmartTyping(psid, followText);
+          await sendText(psid, followText);
           user.lastFollowup = now;
           served[psid] = user;
           saveMemory();
-          console.log("📩 Sent follow-up message to", psid);
+          console.log("📩 Sent follow-up to", psid);
         } else {
           console.log("⏱ Still in cooldown, skipping media for", psid);
         }
         continue;
       }
 
-      // mark served and save
+      // not in cooldown — send media + welcome
       user.lastMedia = now;
       user.lastFollowup = now;
       served[psid] = user;
       saveMemory();
 
-      // send media chunks
       await sendAllMedia(psid);
 
-      // send welcome message after media (if set)
       if (WELCOME_MESSAGE && WELCOME_MESSAGE.length) {
         await sendSmartTyping(psid, WELCOME_MESSAGE);
         await sendText(psid, WELCOME_MESSAGE);
       }
 
-      // finally show quick replies (so they see options right away)
       await sleep(250);
       await sendQuickRepliesList(psid);
     }
@@ -373,7 +423,7 @@ app.post("/webhook", async (req, res) => {
 });
 
 // === ADMIN RESET ROUTES ===
-// Reset all users
+// reset all memory
 app.get("/admin/reset-all", (req, res) => {
   if (req.query.key !== ADMIN_RESET_KEY) return res.status(403).send("Forbidden");
   served = {};
@@ -382,7 +432,7 @@ app.get("/admin/reset-all", (req, res) => {
   res.send("✅ All users cleared from memory");
 });
 
-// Reset only follow-up (12-hour cooldown) for a PSID
+// reset follow-up only (12hr) for one PSID
 app.get("/admin/reset-followup", (req, res) => {
   if (req.query.key !== ADMIN_RESET_KEY) return res.status(403).send("Forbidden");
   const psid = req.query.psid;
@@ -394,7 +444,7 @@ app.get("/admin/reset-followup", (req, res) => {
   res.send(`✅ Cleared follow-up for PSID: ${psid}`);
 });
 
-// Reset only one PSID’s full memory (media + follow-up)
+// reset one PSID fully (media+followup)
 app.get("/admin/reset-all-admin", (req, res) => {
   if (req.query.key !== ADMIN_RESET_KEY) return res.status(403).send("Forbidden");
   const psid = req.query.psid;
@@ -405,7 +455,7 @@ app.get("/admin/reset-all-admin", (req, res) => {
   res.send(`✅ Fully reset admin memory (media + follow-up) for PSID: ${psid}`);
 });
 
-// Health check
+// health check
 app.get("/", (req, res) => res.send("✅ Messenger bot running fine"));
 
 app.listen(PORT, () => console.log(`🚀 Bot live on port ${PORT}`));

@@ -138,11 +138,6 @@ Easy, Nondestructive Installation
 const REPLY_INSTALLATION = `We offer FREE installation po if you’re within our area.
 For shipping naman po, we have COD/COP via LBC, and we also send a video installation guide for easy setup.`;
 
-const REPLY_LOCATION = `📍 We’re based in Iloilo po!
-We’re the main distributor of AD LED nationwide.
-
-Direct from manufacturer — kaya mas mura kahit high-end specs pa ang mga products namin!`;
-
 const WELCOME_MESSAGE = `Hi! 👋 Thanks for messaging us.
 Please provide your Car, Year, Model, and Variant so we can assist you faster.`;
 
@@ -187,7 +182,7 @@ async function sendSmartTyping(psid, text) {
   }
 }
 
-// quick replies helper (includes new option)
+// quick replies helper (Location removed)
 async function sendQuickRepliesList(psid) {
   const quickReplies = {
     recipient: { id: psid },
@@ -198,8 +193,7 @@ async function sendQuickRepliesList(psid) {
         { content_type: "text", title: "How much H4?", payload: "HOW_MUCH_H4" },
         { content_type: "text", title: "Price other bulb types", payload: "PRICE_OTHER_TYPES" },
         { content_type: "text", title: "Product specs?", payload: "PRODUCT_SPECS" },
-        { content_type: "text", title: "Installation?", payload: "INSTALLATION" },
-        { content_type: "text", title: "Location?", payload: "LOCATION" },
+        { content_type: "text", title: "Installation?", payload: "INSTALLATION" }
       ],
     },
   };
@@ -326,13 +320,6 @@ app.post("/webhook", async (req, res) => {
           await sendQuickRepliesList(psid);
           continue;
         }
-        if (quickPayload === "LOCATION") {
-          await sendSmartTyping(psid, REPLY_LOCATION);
-          await sendText(psid, REPLY_LOCATION);
-          await sleep(300);
-          await sendQuickRepliesList(psid);
-          continue;
-        }
       }
 
       // text keyword triggers (also resend quick replies)
@@ -368,13 +355,6 @@ app.post("/webhook", async (req, res) => {
       if (text.includes("install")) {
         await sendSmartTyping(psid, REPLY_INSTALLATION);
         await sendText(psid, REPLY_INSTALLATION);
-        await sleep(300);
-        await sendQuickRepliesList(psid);
-        continue;
-      }
-      if (text.includes("location")) {
-        await sendSmartTyping(psid, REPLY_LOCATION);
-        await sendText(psid, REPLY_LOCATION);
         await sleep(300);
         await sendQuickRepliesList(psid);
         continue;

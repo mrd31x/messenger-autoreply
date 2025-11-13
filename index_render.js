@@ -201,5 +201,43 @@ app.get("/admin/reset", (req, res) => {
 
 // === HEALTH ===
 app.get("/", (req, res) => res.send("✅ Messenger bot running fine"));
+// === ADMIN RESET ROUTES (unified) ===
+
+// Reset all users
+app.get("/admin/reset-all", (req, res) => {
+  const key = req.query.key;
+  if (!key || key !== ADMIN_RESET_KEY) return res.status(403).send("Forbidden");
+  served = {};
+  saveMemory();
+  console.log("🧹 Admin reset: all users cleared");
+  res.send("✅ All users cleared from memory");
+});
+
+// Reset only follow-up (12-hour cooldown) for a PSID
+app.get("/admin/reset-followup", (req, res) => {
+  const key = req.query.key;
+  const psid = req.query.psid;
+  if (!key || key !== ADMIN_RESET_KEY) return res.status(403).send("Forbidden");
+  if (!psid) return res.status(400).send("Missing psid");
+
+  if (!served[psid]) return res.send(`ℹ️ PSID ${psid} not found`);
+  served[psid].lastFollowup = 0;
+  saveMemory();
+  console.log(`🔁 Admin: cleared follow-up for PSID ${psid}`);
+  return res.send(`✅ Cleared follow-up timestamp for PSID: ${psid}`);
+});
+
+// Reset only one PSID’s full memory (media + follow-up)
+app.get("/admin/reset-all-admin", (req, res) => {
+  const key = req.query.key;
+  const psid = req.query.psid;
+  if (!key || key !== ADMIN_RESET_KEY) return res.status(403).send("Forbidden");
+  if (!psid) return res.status(400).send("Missing psid");
+
+  if (served[psid]) delete served[psid]; // completely remove entry
+  saveMemory();
+  console.log(`🔁 Admin reset full memory for ${psid}`);
+  res.send(`✅ Fully reset admin memory (media + follow-up) for PSID: ${psid}`);
+});
 
 app.listen(PORT, () => console.log(`🚀 Bot live on port ${PORT}`));

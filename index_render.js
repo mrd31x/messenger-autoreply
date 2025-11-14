@@ -236,14 +236,19 @@ async function connectMongo() {
     return;
   }
   try {
-    mongoClient = new MongoClient(MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true });
+    // NOTE: do not pass legacy options (useNewUrlParser / useUnifiedTopology) — newer drivers
+    // use sensible defaults and will error if you pass those names.
+    mongoClient = new MongoClient(MONGODB_URI);
     await mongoClient.connect();
+
     const db = mongoClient.db(MONGODB_DBNAME);
     servedCollection = db.collection(MONGODB_COLLECTION);
-    // create index on psid for fast upsert/find
+
+    // create index on psid for fast upsert/find (idempotent)
     await servedCollection.createIndex({ psid: 1 }, { unique: true });
+
     console.log("✅ Connected to MongoDB");
-    // load existing served users into memory
+    // load existing served users into memory cache
     const docs = await servedCollection.find({}).toArray();
     for (const d of docs) {
       served[d.psid] = { lastMedia: d.lastMedia || 0, lastFollowup: d.lastFollowup || 0 };

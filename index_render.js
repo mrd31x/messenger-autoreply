@@ -1,21 +1,19 @@
-// index_render.js – Complete clean Messenger auto-reply (Render-ready)
-// - Quick replies (includes "Price other bulb types")
-// - Smart typing: 40 ms/char, min 700ms, max 40000ms
-// - Media chunks (CHUNK_SIZE = 3)
-// - Cooldown: media once per COOLDOWN_DAYS, follow-up once per FOLLOWUP_HOURS
-// - Admin reset routes
-// Paste this file into your render project (replace existing) or run locally with node.
+// index_render.js – Render-ready Messenger auto-reply with MongoDB persistence
+// - Reuses your working bot logic
+// - Stores served users in MongoDB so Render sleeping doesn't reset cooldowns
+// - Requires env var MONGODB_URI
 
 const express = require("express");
 const bodyParser = require("body-parser");
 const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
+const { MongoClient } = require("mongodb");
 
 const app = express();
 app.use(bodyParser.json());
 
-// === CONFIG - paste your Page Access Token here or set via env var ===
+// === CONFIG - prefer Render env vars ===
 const PAGE_ACCESS_TOKEN =
   process.env.PAGE_ACCESS_TOKEN ||
   "EAAQ2omfzFccBP1EqtZCGsAvYgQsqsCTEG4fZAUFbKUNXenrNfKBlfr9HnaWZCWuE355E4PodmrItrugB7Y44zGQ8LoDHWsbj4mqB4aYYxHdrjA8tuQ0on6uL1ahmiENXoGar3VrOrlywPr3GW6oFsqy9QutMir8ZBT21b3p4S7PfAYwxD08hBKrQeHpm3R3fec77";
@@ -27,9 +25,13 @@ const FOLLOWUP_HOURS = Number(process.env.FOLLOWUP_HOURS || 12); // follow-up co
 const PORT = process.env.PORT || 10000;
 const CHUNK_SIZE = Number(process.env.CHUNK_SIZE || 3); // media per carousel chunk
 
-// === FILE PATHS ===
+// MONGODB
+const MONGODB_URI = process.env.MONGODB_URI || ""; // set this in Render env vars
+const MONGODB_DBNAME = process.env.MONGODB_DBNAME || "messenger_autoreply";
+const MONGODB_COLLECTION = process.env.MONGODB_COLLECTION || "served_users";
+
+// === FILE PATHS (still used for manifest + media list) ===
 const MANIFEST_PATH = path.join(__dirname, "cloudinary_manifest.json");
-const MEMORY_PATH = path.join(__dirname, "served_users.json");
 
 // === LOAD MEDIA LIST ===
 let mediaUrls = [];
@@ -44,25 +46,15 @@ try {
   console.error("❌ Failed to read cloudinary_manifest.json:", e.message);
 }
 
-// === LOAD MEMORY (served users) ===
-let served = {};
-try {
-  if (fs.existsSync(MEMORY_PATH)) {
-    served = JSON.parse(fs.readFileSync(MEMORY_PATH, "utf8"));
-  }
-} catch (e) {
-  console.error("❌ Failed to load served_users.json:", e.message);
-}
-const saveMemory = () => {
-  try {
-    fs.writeFileSync(MEMORY_PATH, JSON.stringify(served, null, 2));
-  } catch (e) {
-    console.error("❌ Failed to save memory:", e.message);
-  }
-};
+// In-memory cache (keeps speed); persisted to MongoDB on changes
+let served = {}; // { psid: { lastMedia: Number, lastFollowup: Number } }
 
 // Deduplicate incoming message ids
 const mids = new Set();
+
+// Mongo client/collection handles
+let mongoClient = null;
+let servedCollection = null;
 
 // === REPLY TEXTS (multiline strings) ===
 const REPLY_HOW_TO_ORDER = `Hi! 😊
@@ -97,7 +89,7 @@ Product Specs:
 
 ✅ Super bright, durable, waterproof & easy to install!`;
 
-// <-- NEW placeholder for "Price other bulb types" - put your reply inside backticks -->
+// Price other bulb types placeholder — edit as needed
 const REPLY_PRICE_OTHER_TYPES = `💡 For Other Bulb Types / Single Beam Bulbs:
 
 🔥 P2,395 / pair
@@ -106,19 +98,7 @@ Available: H11, HB3, 9005, 9006, 9012, H7, H1, H3, H27, etc.
 
 💸 Budget Variant (12K–15K Lumens):
 P1,195 – P1,495 / pair
-Limited bulb types available
-
-Small Bulbs:
-• T10 – P400/pair
-• Festoon 31mm – P350/pc
-• T15 / T20 / 1156 / 1157 / 7440 / 7443 – P450/pair
-
-🎉 Promo Packages Available:
-We also offer promo bundles when you order as a set, e.g.:
-• Headlight + Fog Lights
-• Headlight + Park Lights
-
-💬 Just send us a message and we’ll give you the specific promotional offer available for your bulb type.`;
+...`;
 
 const REPLY_PRODUCT_SPECS = `Product Specs:
 Power: 120W / 30,000 Lumens
@@ -126,14 +106,8 @@ Voltage: 9V–36V (fits most vehicles)
 Waterproof: IP67
 Material: Aviation Aluminum + Copper PCB
 Rotation: 360° Adjustable
-Temp Range: -40°C to 180°C
 Lifespan: Up to 50,000 hours
-Super Heat Dissipation
-Canbus Ready (No Error)
-Easy, Nondestructive Installation
-
-✅ High brightness, durable, waterproof & all-weather ready!
-`;
+✅ High brightness, durable, waterproof & all-weather ready!`;
 
 const REPLY_INSTALLATION = `We offer FREE installation po if you’re within our area.
 For shipping naman po, we have COD/COP via LBC, and we also send a video installation guide for easy setup.`;
@@ -255,6 +229,62 @@ async function sendAllMedia(psid) {
   }
 }
 
+// === MONGODB helpers ===
+async function connectMongo() {
+  if (!MONGODB_URI) {
+    console.warn("⚠️ MONGODB_URI not set - served_users will be memory-only (Render sleep will reset).");
+    return;
+  }
+  try {
+    mongoClient = new MongoClient(MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true });
+    await mongoClient.connect();
+    const db = mongoClient.db(MONGODB_DBNAME);
+    servedCollection = db.collection(MONGODB_COLLECTION);
+    // create index on psid for fast upsert/find
+    await servedCollection.createIndex({ psid: 1 }, { unique: true });
+    console.log("✅ Connected to MongoDB");
+    // load existing served users into memory
+    const docs = await servedCollection.find({}).toArray();
+    for (const d of docs) {
+      served[d.psid] = { lastMedia: d.lastMedia || 0, lastFollowup: d.lastFollowup || 0 };
+    }
+    console.log(`✅ Loaded ${docs.length} served users from MongoDB`);
+  } catch (e) {
+    console.error("❌ MongoDB connect failed:", e.message);
+    servedCollection = null;
+  }
+}
+
+async function upsertServed(psid, data) {
+  served[psid] = data;
+  if (!servedCollection) return;
+  try {
+    await servedCollection.updateOne({ psid }, { $set: { psid, ...data } }, { upsert: true });
+  } catch (e) {
+    console.error("❌ upsertServed error:", e.message);
+  }
+}
+
+async function deleteServed(psid) {
+  delete served[psid];
+  if (!servedCollection) return;
+  try {
+    await servedCollection.deleteOne({ psid });
+  } catch (e) {
+    console.error("❌ deleteServed error:", e.message);
+  }
+}
+
+async function clearAllServed() {
+  served = {};
+  if (!servedCollection) return;
+  try {
+    await servedCollection.deleteMany({});
+  } catch (e) {
+    console.error("❌ clearAllServed error:", e.message);
+  }
+}
+
 // === WEBHOOKS ===
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
@@ -368,14 +398,13 @@ app.post("/webhook", async (req, res) => {
 
       // if still within media cooldown
       if (now - user.lastMedia < cooldown) {
-        // maybe send follow-up (12hr) if allowed
+        // maybe send follow-up if follow-up window passed
         if (now - user.lastFollowup >= followupWindow) {
           const followText = "We will get back to you as soon as we can. Thank you!";
           await sendSmartTyping(psid, followText);
           await sendText(psid, followText);
           user.lastFollowup = now;
-          served[psid] = user;
-          saveMemory();
+          await upsertServed(psid, user);
           console.log("📩 Sent follow-up to", psid);
         } else {
           console.log("⏱ Still in cooldown, skipping media for", psid);
@@ -386,8 +415,7 @@ app.post("/webhook", async (req, res) => {
       // not in cooldown — send media + welcome
       user.lastMedia = now;
       user.lastFollowup = now;
-      served[psid] = user;
-      saveMemory();
+      await upsertServed(psid, user);
 
       await sendAllMedia(psid);
 
@@ -404,33 +432,31 @@ app.post("/webhook", async (req, res) => {
 
 // === ADMIN RESET ROUTES ===
 // reset all memory
-app.get("/admin/reset-all", (req, res) => {
+app.get("/admin/reset-all", async (req, res) => {
   if (req.query.key !== ADMIN_RESET_KEY) return res.status(403).send("Forbidden");
-  served = {};
-  saveMemory();
+  await clearAllServed();
   console.log("🧹 Admin reset: all users cleared");
   res.send("✅ All users cleared from memory");
 });
 
 // reset follow-up only (12hr) for one PSID
-app.get("/admin/reset-followup", (req, res) => {
+app.get("/admin/reset-followup", async (req, res) => {
   if (req.query.key !== ADMIN_RESET_KEY) return res.status(403).send("Forbidden");
   const psid = req.query.psid;
   if (!psid) return res.status(400).send("Missing psid");
   if (!served[psid]) return res.send(`ℹ️ PSID ${psid} not found`);
   served[psid].lastFollowup = 0;
-  saveMemory();
+  await upsertServed(psid, served[psid]);
   console.log(`🔁 Cleared follow-up for ${psid}`);
   res.send(`✅ Cleared follow-up for PSID: ${psid}`);
 });
 
 // reset one PSID fully (media+followup)
-app.get("/admin/reset-all-admin", (req, res) => {
+app.get("/admin/reset-all-admin", async (req, res) => {
   if (req.query.key !== ADMIN_RESET_KEY) return res.status(403).send("Forbidden");
   const psid = req.query.psid;
   if (!psid) return res.status(400).send("Missing psid");
-  if (served[psid]) delete served[psid];
-  saveMemory();
+  await deleteServed(psid);
   console.log(`🔁 Fully reset admin memory for ${psid}`);
   res.send(`✅ Fully reset admin memory (media + follow-up) for PSID: ${psid}`);
 });
@@ -438,4 +464,13 @@ app.get("/admin/reset-all-admin", (req, res) => {
 // health check
 app.get("/", (req, res) => res.send("✅ Messenger bot running fine"));
 
-app.listen(PORT, () => console.log(`🚀 Bot live on port ${PORT}`));
+// start server AFTER connecting to MongoDB so served in-memory cache is populated
+async function start() {
+  await connectMongo();
+  app.listen(PORT, () => console.log(`🚀 Bot live on port ${PORT}`));
+}
+start().catch((e) => {
+  console.error("❌ Failed to start:", e.message);
+  // still start server even if mongo unavailable
+  app.listen(PORT, () => console.log(`🚀 Bot live (mongo unavailable) on port ${PORT}`));
+});

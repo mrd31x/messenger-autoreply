@@ -21,7 +21,7 @@ const PAGE_ACCESS_TOKEN =
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "mybot123";
 const ADMIN_RESET_KEY = process.env.ADMIN_RESET_KEY || "reset1531";
 const COOLDOWN_DAYS = Number(process.env.COOLDOWN_DAYS || 30); // media cooldown
-const FOLLOWUP_HOURS = Number(process.env.FOLLOWUP_HOURS || 12); // follow-up cooldown
+const FOLLOWUP_HOURS = Number(process.env.FOLLOWUP_HOURS || 3); // follow-up cooldown
 const PORT = process.env.PORT || 10000;
 const CHUNK_SIZE = Number(process.env.CHUNK_SIZE || 3); // media per carousel chunk
 
@@ -405,7 +405,7 @@ app.post("/webhook", async (req, res) => {
       if (now - user.lastMedia < cooldown) {
         // maybe send follow-up if follow-up window passed
         if (now - user.lastFollowup >= followupWindow) {
-          const followText = "We will get back to you as soon as we can. Thank you!";
+          const followText = "Thanks for your message!😊, We’ll get back to you shortly. Thank you!";
           await sendSmartTyping(psid, followText);
           await sendText(psid, followText);
           user.lastFollowup = now;

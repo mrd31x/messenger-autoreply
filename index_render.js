@@ -405,7 +405,7 @@ app.post("/webhook", async (req, res) => {
       if (now - user.lastMedia < cooldown) {
         // maybe send follow-up if follow-up window passed
         if (now - user.lastFollowup >= followupWindow) {
-          const followText = "Thanks for your message!😊, We’ll get back to you shortly.";
+          const followText = "Thanks for your message! We’ll get back to you shortly.😊";
           await sendSmartTyping(psid, followText);
           await sendText(psid, followText);
           user.lastFollowup = now;

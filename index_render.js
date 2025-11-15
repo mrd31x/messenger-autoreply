@@ -406,21 +406,6 @@ app.post("/webhook", async (req, res) => {
         await sendQuickRepliesList(psid);
         continue;
       }
-// --- FALLBACK: restore quick-reply template if message didn't match any keyword/quick-reply ---
-{
-  // Don't resend the WELCOME_MESSAGE here — only show a short fallback prompt + quick replies
-  const fallbackText = "We will get back to you as soon as we can. Thank you😊";
-  try {
-    await sendSmartTyping(psid, fallbackText);
-    await sendText(psid, fallbackText);
-    await sleep(200);
-    await sendQuickRepliesList(psid);
-  } catch (err) {
-    console.error("❌ fallback send error:", err?.message || err);
-  }
-  // stop further processing for this event so we don't trigger media/cooldown flow
-  continue;
-}
 
       // ---------- cooldown & media sending ----------
       const now = Date.now();

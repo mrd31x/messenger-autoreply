@@ -161,7 +161,7 @@ async function sendQuickRepliesList(psid) {
   const quickReplies = {
     recipient: { id: psid },
     message: {
-      text: "You can also tap an option below 👇",
+      text: "",
       quick_replies: [
         { content_type: "text", title: "How to order?", payload: "HOW_TO_ORDER" },
         { content_type: "text", title: "How much H4?", payload: "HOW_MUCH_H4" },

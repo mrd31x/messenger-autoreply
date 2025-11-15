@@ -98,7 +98,19 @@ Available: H11, HB3, 9005, 9006, 9012, H7, H1, H3, H27, etc.
 
 💸 Budget Variant (12K–15K Lumens):
 P1,195 – P1,495 / pair
-...`;
+Limited bulb types available
+
+Small Bulbs:
+• T10 – P400/pair
+• Festoon 31mm – P350/pc
+• T15 / T20 / 1156 / 1157 / 7440 / 7443 – P450/pair
+
+🎉 Promo Packages Available:
+We also offer promo bundles when you order as a set, e.g.:
+• Headlight + Fog Lights
+• Headlight + Park Lights
+
+💬 Just send us a message and we’ll give you the specific promotional offer available for your bulb type.`;
 
 const REPLY_PRODUCT_SPECS = `Product Specs:
 Power: 120W / 30,000 Lumens

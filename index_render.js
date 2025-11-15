@@ -161,7 +161,7 @@ async function sendQuickRepliesList(psid) {
   const quickReplies = {
     recipient: { id: psid },
     message: {
-      text: "",
+      text: "\u200B",
       quick_replies: [
         { content_type: "text", title: "How to order?", payload: "HOW_TO_ORDER" },
         { content_type: "text", title: "How much H4?", payload: "HOW_MUCH_H4" },
@@ -358,7 +358,7 @@ app.post("/webhook", async (req, res) => {
       }
 
       // text keyword triggers (also resend quick replies)
-      const text = (ev.message?.text || "text: "\u200B",
+      const text = (ev.message?.text || "text: "",
 ").toLowerCase();
       if (text.includes("how to order")) {
         await sendSmartTyping(psid, REPLY_HOW_TO_ORDER);

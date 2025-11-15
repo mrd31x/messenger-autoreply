@@ -358,7 +358,8 @@ app.post("/webhook", async (req, res) => {
       }
 
       // text keyword triggers (also resend quick replies)
-      const text = (ev.message?.text || "").toLowerCase();
+      const text = (ev.message?.text || "text: "\u200B",
+").toLowerCase();
       if (text.includes("how to order")) {
         await sendSmartTyping(psid, REPLY_HOW_TO_ORDER);
         await sendText(psid, REPLY_HOW_TO_ORDER);

@@ -408,11 +408,51 @@ app.post("/webhook", async (req, res) => {
   continue;
 }
 
-      // ---------- cooldown & media sending ----------
-      const now = Date.now();
-      const user = served[psid] || { lastMedia: 0, lastFollowup: 0 };
-      const cooldown = COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
-      const followupWindow = FOLLOWUP_HOURS * 60 * 60 * 1000;
+    // ---------- cooldown & media sending ----------
+const now = Date.now();
+const user = served[psid] || { lastMedia: 0, lastFollowup: 0 };
+const cooldown = COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
+const followupWindow = FOLLOWUP_HOURS * 60 * 60 * 1000;
+
+// If user is still within the media cooldown period, handle follow-up logic
+// and always re-show the quick-reply template (fallback) so the template doesn't disappear.
+if (now - user.lastMedia < cooldown) {
+  try {
+    if (now - user.lastFollowup >= followupWindow) {
+      const followText = "Thanks for your message! We’ll get back to you shortly.😊";
+      await sendSmartTyping(psid, followText);
+      await sendText(psid, followText);
+      user.lastFollowup = now;
+      await upsertServed(psid, user);
+      console.log("📩 Sent follow-up to", psid);
+    } else {
+      console.log("⏱ Still in cooldown, skipping follow-up for", psid);
+    }
+
+    // restore quick replies so UI doesn't lose the template
+    await sleep(150);
+    await sendQuickRepliesList(psid);
+  } catch (err) {
+    console.error("❌ cooldown/fallback error:", err?.message || err);
+  }
+  continue;
+}
+
+// not in cooldown — send media + welcome (existing flow)
+user.lastMedia = now;
+user.lastFollowup = now;
+await upsertServed(psid, user);
+
+await sendAllMedia(psid);
+
+if (WELCOME_MESSAGE && WELCOME_MESSAGE.length) {
+  await sendSmartTyping(psid, WELCOME_MESSAGE);
+  await sendText(psid, WELCOME_MESSAGE);
+}
+
+await sleep(250);
+await sendQuickRepliesList(psid);
+
 
       // if still within media cooldown
       if (now - user.lastMedia < cooldown) {

@@ -98,19 +98,7 @@ Available: H11, HB3, 9005, 9006, 9012, H7, H1, H3, H27, etc.
 
 💸 Budget Variant (12K–15K Lumens):
 P1,195 – P1,495 / pair
-Limited bulb types available
-
-Small Bulbs:
-• T10 – P400/pair
-• Festoon 31mm – P350/pc
-• T15 / T20 / 1156 / 1157 / 7440 / 7443 – P450/pair
-
-🎉 Promo Packages Available:
-We also offer promo bundles when you order as a set, e.g.:
-• Headlight + Fog Lights
-• Headlight + Park Lights
-
-💬 Just send us a message and we’ll give you the specific promotional offer available for your bulb type.`;
+...`;
 
 const REPLY_PRODUCT_SPECS = `Product Specs:
 Power: 120W / 30,000 Lumens
@@ -173,7 +161,7 @@ async function sendQuickRepliesList(psid) {
   const quickReplies = {
     recipient: { id: psid },
     message: {
-      text: "\u200B",
+      text: "You can also tap an option below 👇",
       quick_replies: [
         { content_type: "text", title: "How to order?", payload: "HOW_TO_ORDER" },
         { content_type: "text", title: "How much H4?", payload: "HOW_MUCH_H4" },
@@ -462,23 +450,20 @@ app.get("/admin/reset-followup", async (req, res) => {
   const psid = req.query.psid;
   if (!psid) return res.status(400).send("Missing psid");
   if (!served[psid]) return res.send(`ℹ️ PSID ${psid} not found`);
-  served[psid].lastFollowup = Date.now();
+  served[psid].lastFollowup = 0;
   await upsertServed(psid, served[psid]);
   console.log(`🔁 Cleared follow-up for ${psid}`);
   res.send(`✅ Cleared follow-up for PSID: ${psid}`);
 });
 
-// reset one PSID fully (send media + welcome again)
+// reset one PSID fully (media+followup)
 app.get("/admin/reset-all-admin", async (req, res) => {
   if (req.query.key !== ADMIN_RESET_KEY) return res.status(403).send("Forbidden");
   const psid = req.query.psid;
   if (!psid) return res.status(400).send("Missing psid");
-
-  // TRUE first-time state
-  served[psid] = { lastMedia: 0, lastFollowup: 0 };
-  await upsertServed(psid, served[psid]);
-
-  res.send(`User reset — media + welcome will send next message`);
+  await deleteServed(psid);
+  console.log(`🔁 Fully reset admin memory for ${psid}`);
+  res.send(`✅ Fully reset admin memory (media + follow-up) for PSID: ${psid}`);
 });
 
 // health check

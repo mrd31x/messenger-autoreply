@@ -477,7 +477,7 @@ app.get("/admin/reset-followup", async (req, res) => {
   const psid = req.query.psid;
   if (!psid) return res.status(400).send("Missing psid");
   if (!served[psid]) return res.send(`ℹ️ PSID ${psid} not found`);
-  served[psid].lastFollowup = 0;
+  served[psid].lastFollowup = Date.now();
   await upsertServed(psid, served[psid]);
   console.log(`🔁 Cleared follow-up for ${psid}`);
   res.send(`✅ Cleared follow-up for PSID: ${psid}`);

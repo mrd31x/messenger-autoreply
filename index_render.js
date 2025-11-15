@@ -397,7 +397,7 @@ app.post("/webhook", async (req, res) => {
 // --- FALLBACK: restore quick-reply template if message didn't match any keyword/quick-reply ---
 {
   // Don't resend the WELCOME_MESSAGE here — only show a short fallback prompt + quick replies
-  const fallbackText = "Thank you! 😊\nWe didn’t quite get that. Please tap an option below 👇 or send your Car, Year, Model, Variant.";
+  const fallbackText = "We will get back to you as soon as we can. Thank you😊";
   try {
     await sendSmartTyping(psid, fallbackText);
     await sendText(psid, fallbackText);

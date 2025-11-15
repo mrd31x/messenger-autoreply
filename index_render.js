@@ -483,20 +483,18 @@ app.get("/admin/reset-followup", async (req, res) => {
   res.send(`✅ Cleared follow-up for PSID: ${psid}`);
 });
 
-// reset one PSID fully (media+welcome)
+// reset one PSID fully (send media + welcome again)
 app.get("/admin/reset-all-admin", async (req, res) => {
   if (req.query.key !== ADMIN_RESET_KEY) return res.status(403).send("Forbidden");
   const psid = req.query.psid;
   if (!psid) return res.status(400).send("Missing psid");
 
-  // TRUE first-time state → bot will resend media + welcome
+  // TRUE first-time state
   served[psid] = { lastMedia: 0, lastFollowup: 0 };
   await upsertServed(psid, served[psid]);
 
-  console.log(`🆕 Full reset for ${psid}: user will get media + welcome again`);
-  res.send(`✅ User fully reset — media + welcome will send on next message`);
+  res.send(`User reset — media + welcome will send next message`);
 });
-
 
 // health check
 app.get("/", (req, res) => res.send("✅ Messenger bot running fine"));

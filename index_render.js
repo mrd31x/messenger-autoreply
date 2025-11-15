@@ -98,7 +98,19 @@ Available: H11, HB3, 9005, 9006, 9012, H7, H1, H3, H27, etc.
 
 💸 Budget Variant (12K–15K Lumens):
 P1,195 – P1,495 / pair
-...`;
+Limited bulb types available
+
+Small Bulbs:
+• T10 – P400/pair
+• Festoon 31mm – P350/pc
+• T15 / T20 / 1156 / 1157 / 7440 / 7443 – P450/pair
+
+🎉 Promo Packages Available:
+We also offer promo bundles when you order as a set, e.g.:
+• Headlight + Fog Lights
+• Headlight + Park Lights
+
+💬 Just send us a message and we’ll give you the specific promotional offer available for your bulb type.`;
 
 const REPLY_PRODUCT_SPECS = `Product Specs:
 Power: 120W / 30,000 Lumens
@@ -161,7 +173,7 @@ async function sendQuickRepliesList(psid) {
   const quickReplies = {
     recipient: { id: psid },
     message: {
-      text: "You can also tap an option below 👇",
+      text: "\u200B",
       quick_replies: [
         { content_type: "text", title: "How to order?", payload: "HOW_TO_ORDER" },
         { content_type: "text", title: "How much H4?", payload: "HOW_MUCH_H4" },
@@ -394,72 +406,58 @@ app.post("/webhook", async (req, res) => {
         await sendQuickRepliesList(psid);
         continue;
       }
-
-      // ---------- cooldown & media sending ----------
-const now = Date.now();
-const user = served[psid] || { lastMedia: 0, lastFollowup: 0 };
-const cooldown = COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
-const followupWindow = FOLLOWUP_HOURS * 60 * 60 * 1000;
-
-// FALLBACK: if user typed something that's NOT a known keyword, show fallback + quick replies
-// (prevents quick-replies from disappearing when user types free text)
-const text = (ev.message?.text || "").toLowerCase();
-const isKeyword =
-  text.includes("how to order") ||
-  text.includes("how much h4") ||
-  text.includes("other bulb") ||
-  text.includes("price other") ||
-  text.includes("product specs") ||
-  text.includes("install") ||
-  !!quickPayload; // quickPayload already handled above, keep it safe
-
-if (text && !isKeyword) {
-  // Only send fallback if follow-up window passed (prevents spam)
-  if (now - user.lastFollowup >= followupWindow) {
-    const fallbackText = "Thanks for your message! We’ll get back to you shortly. 😊";
+// --- FALLBACK: restore quick-reply template if message didn't match any keyword/quick-reply ---
+{
+  // Don't resend the WELCOME_MESSAGE here — only show a short fallback prompt + quick replies
+  const fallbackText = "We will get back to you as soon as we can. Thank you😊";
+  try {
     await sendSmartTyping(psid, fallbackText);
     await sendText(psid, fallbackText);
-    user.lastFollowup = now;
-    await upsertServed(psid, user);
-    console.log("🔁 Fallback sent to", psid);
-  } else {
-    // still in followup cooldown — simply re-show quick replies so user can tap options
+    await sleep(200);
     await sendQuickRepliesList(psid);
-    console.log("🔁 Follow-up cooldown active — re-sent quick replies to", psid);
+  } catch (err) {
+    console.error("❌ fallback send error:", err?.message || err);
   }
+  // stop further processing for this event so we don't trigger media/cooldown flow
   continue;
 }
 
-// if still within media cooldown
-if (now - user.lastMedia < cooldown) {
-  // maybe send follow-up if follow-up window passed
-  if (now - user.lastFollowup >= followupWindow) {
-    const followText = "Thanks for your message! We’ll get back to you shortly. 😊";
-    await sendSmartTyping(psid, followText);
-    await sendText(psid, followText);
-    user.lastFollowup = now;
-    await upsertServed(psid, user);
-    console.log("📩 Sent follow-up to", psid);
-  } else {
-    console.log("⏱ Still in cooldown, skipping media for", psid);
-  }
-  continue;
-}
+      // ---------- cooldown & media sending ----------
+      const now = Date.now();
+      const user = served[psid] || { lastMedia: 0, lastFollowup: 0 };
+      const cooldown = COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
+      const followupWindow = FOLLOWUP_HOURS * 60 * 60 * 1000;
 
-// not in cooldown — send media + welcome
-user.lastMedia = now;
-user.lastFollowup = now;
-await upsertServed(psid, user);
+      // if still within media cooldown
+      if (now - user.lastMedia < cooldown) {
+        // maybe send follow-up if follow-up window passed
+        if (now - user.lastFollowup >= followupWindow) {
+          const followText = "Thanks for your message! We’ll get back to you shortly.😊";
+          await sendSmartTyping(psid, followText);
+          await sendText(psid, followText);
+          user.lastFollowup = now;
+          await upsertServed(psid, user);
+          console.log("📩 Sent follow-up to", psid);
+        } else {
+          console.log("⏱ Still in cooldown, skipping media for", psid);
+        }
+        continue;
+      }
 
-await sendAllMedia(psid);
+      // not in cooldown — send media + welcome
+      user.lastMedia = now;
+      user.lastFollowup = now;
+      await upsertServed(psid, user);
 
-if (WELCOME_MESSAGE && WELCOME_MESSAGE.length) {
-  await sendSmartTyping(psid, WELCOME_MESSAGE);
-  await sendText(psid, WELCOME_MESSAGE);
-}
+      await sendAllMedia(psid);
 
-await sleep(250);
-await sendQuickRepliesList(psid);
+      if (WELCOME_MESSAGE && WELCOME_MESSAGE.length) {
+        await sendSmartTyping(psid, WELCOME_MESSAGE);
+        await sendText(psid, WELCOME_MESSAGE);
+      }
+
+      await sleep(250);
+      await sendQuickRepliesList(psid);
     }
   }
 });

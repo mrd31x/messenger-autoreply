@@ -161,7 +161,7 @@ async function sendQuickRepliesList(psid) {
   const quickReplies = {
     recipient: { id: psid },
     message: {
-      text: "You can also tap an option below 👇",
+      text: "\u200B",
       quick_replies: [
         { content_type: "text", title: "How to order?", payload: "HOW_TO_ORDER" },
         { content_type: "text", title: "How much H4?", payload: "HOW_MUCH_H4" },
@@ -394,6 +394,21 @@ app.post("/webhook", async (req, res) => {
         await sendQuickRepliesList(psid);
         continue;
       }
+// --- FALLBACK: restore quick-reply template if message didn't match any keyword/quick-reply ---
+{
+  // Don't resend the WELCOME_MESSAGE here — only show a short fallback prompt + quick replies
+  const fallbackText = "Thank you! 😊\nWe didn’t quite get that. Please tap an option below 👇 or send your Car, Year, Model, Variant.";
+  try {
+    await sendSmartTyping(psid, fallbackText);
+    await sendText(psid, fallbackText);
+    await sleep(200);
+    await sendQuickRepliesList(psid);
+  } catch (err) {
+    console.error("❌ fallback send error:", err?.message || err);
+  }
+  // stop further processing for this event so we don't trigger media/cooldown flow
+  continue;
+}
 
       // ---------- cooldown & media sending ----------
       const now = Date.now();

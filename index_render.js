@@ -394,6 +394,19 @@ app.post("/webhook", async (req, res) => {
         await sendQuickRepliesList(psid);
         continue;
       }
+// --- FALLBACK: restore quick-reply template when no keyword matched ---
+{
+  const fallbackText = "Thank you! 😊\nWe didn’t quite get that. Please tap an option below 👇 or send your Car, Year, Model, Variant.";
+  try {
+    await sendSmartTyping(psid, fallbackText);
+    await sendText(psid, fallbackText);
+    await sleep(200);
+    await sendQuickRepliesList(psid);
+  } catch (err) {
+    console.error("❌ fallback send error:", err?.message || err);
+  }
+  continue;
+}
 
       // ---------- cooldown & media sending ----------
       const now = Date.now();

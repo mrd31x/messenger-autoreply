@@ -175,7 +175,10 @@ async function sendTyping(psid, ms = 1200) {
 async function sendSmartTyping(psid, text) {
   try {
     const chars = (text || "").length;
-    const ms = Math.min(40000, Math.max(700, Math.round(chars * 40))); // 40ms/char
+
+    // Safer typing duration (max 15s)
+    const ms = Math.min(15000, Math.max(700, Math.round(chars * 25)));
+
     console.log(`🕑 Typing for ${ms}ms (chars=${chars})`);
     await sendTyping(psid, ms);
   } catch (e) {

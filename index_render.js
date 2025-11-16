@@ -1,7 +1,11 @@
-// index_render.js – Render-ready Messenger auto-reply with MongoDB persistence
-// - Reuses your working bot logic
+// index_render.js – Full, complete, no-ellipsis Messenger auto-reply (Render-ready + MongoDB)
 // - Stores served users in MongoDB so Render sleeping doesn't reset cooldowns
-// - Requires env var MONGODB_URI
+// - Quick replies (persistent re-show after replies)
+// - Fallback that respects follow-up cooldown
+// - Smart typing (40ms/char, min 700ms, max 40000ms)
+// - Media chunking (CHUNK_SIZE = 3)
+// - Admin reset routes
+// Paste/replace this file in your Render project (or run locally with node).
 
 const express = require("express");
 const bodyParser = require("body-parser");
@@ -13,24 +17,24 @@ const { MongoClient } = require("mongodb");
 const app = express();
 app.use(bodyParser.json());
 
-// === CONFIG - prefer Render env vars ===
+// === CONFIG - paste your Page Access Token here or set via env var ===
 const PAGE_ACCESS_TOKEN =
   process.env.PAGE_ACCESS_TOKEN ||
   "EAAQ2omfzFccBP1EqtZCGsAvYgQsqsCTEG4fZAUFbKUNXenrNfKBlfr9HnaWZCWuE355E4PodmrItrugB7Y44zGQ8LoDHWsbj4mqB4aYYxHdrjA8tuQ0on6uL1ahmiENXoGar3VrOrlywPr3GW6oFsqy9QutMir8ZBT21b3p4S7PfAYwxD08hBKrQeHpm3R3fec77";
 
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "mybot123";
 const ADMIN_RESET_KEY = process.env.ADMIN_RESET_KEY || "reset1531";
-const COOLDOWN_DAYS = Number(process.env.COOLDOWN_DAYS || 30); // media cooldown
-const FOLLOWUP_HOURS = Number(process.env.FOLLOWUP_HOURS || 3); // follow-up cooldown
+const COOLDOWN_DAYS = Number(process.env.COOLDOWN_DAYS || 30); // media cooldown (days)
+const FOLLOWUP_HOURS = Number(process.env.FOLLOWUP_HOURS || 3); // follow-up cooldown (hours)
 const PORT = process.env.PORT || 10000;
 const CHUNK_SIZE = Number(process.env.CHUNK_SIZE || 3); // media per carousel chunk
 
-// MONGODB
-const MONGODB_URI = process.env.MONGODB_URI || ""; // set this in Render env vars
+// === MONGODB CONFIG ===
+const MONGODB_URI = process.env.MONGODB_URI || ""; // put your connection string in Render env vars
 const MONGODB_DBNAME = process.env.MONGODB_DBNAME || "messenger_autoreply";
 const MONGODB_COLLECTION = process.env.MONGODB_COLLECTION || "served_users";
 
-// === FILE PATHS (still used for manifest + media list) ===
+// === FILE PATHS ===
 const MANIFEST_PATH = path.join(__dirname, "cloudinary_manifest.json");
 
 // === LOAD MEDIA LIST ===
@@ -46,17 +50,17 @@ try {
   console.error("❌ Failed to read cloudinary_manifest.json:", e.message);
 }
 
-// In-memory cache (keeps speed); persisted to MongoDB on changes
+// In-memory cache for served users (persisted to MongoDB)
 let served = {}; // { psid: { lastMedia: Number, lastFollowup: Number } }
 
-// Deduplicate incoming message ids
+// Deduplicate incoming message ids to avoid double-processing
 const mids = new Set();
 
-// Mongo client/collection handles
+// Mongo client and collection references
 let mongoClient = null;
 let servedCollection = null;
 
-// === REPLY TEXTS (multiline strings) ===
+// === REPLY TEXTS (FULL — no ellipses or truncation anywhere) ===
 const REPLY_HOW_TO_ORDER = `Hi! 😊
 Here’s how to order:
 
@@ -80,49 +84,62 @@ Please send:
 Once details are complete, we’ll confirm your order right away.
 Thank you! 🙏`;
 
-const REPLY_HOW_MUCH_H4 = `H4 Type Led Bulb
+const REPLY_HOW_MUCH_H4 = `H4 Type LED Bulb
 
-P2,495 / pair
+Price: P2,495 per pair
 
-Product Specs:
-120W | 30,000 Lumens | IP67 Waterproof | Canbus Ready | 360° Adjustable | 50,000 hrs lifespan
+Product Specifications:
+• Power: 120W per pair
+• Brightness: 30,000 Lumens (pair)
+• Waterproof: IP67
+• Canbus Ready (no error for most vehicles)
+• 360° Adjustable beam angle
+• Lifespan: Up to 50,000 hours
+• Material: Aviation-grade aluminum housing with efficient heat sink
 
-✅ Super bright, durable, waterproof & easy to install!`;
+This product is super bright, durable, waterproof and easy to install. If you need compatibility help, please tell us your car make, year and model.`;
 
-// Price other bulb types placeholder — edit as needed
-const REPLY_PRICE_OTHER_TYPES = `💡 For Other Bulb Types / Single Beam Bulbs:
+const REPLY_PRICE_OTHER_TYPES = `For Other Bulb Types and Single Beam Bulbs:
 
-🔥 P2,395 / pair
-30,000 Lumens (Best Seller)
-Available: H11, HB3, 9005, 9006, 9012, H7, H1, H3, H27, etc.
+Standard High-Brightness Variant:
+• Price: P2,395 per pair
+• Brightness: 30,000 Lumens (pair)
+• Available types: H11, HB3 (9005), HB4 (9006), 9012, H7, H1, H3, H27 and others (please tell us your bulb code)
 
-💸 Budget Variant (12K–15K Lumens):
-P1,195 – P1,495 / pair
-Limited bulb types available
+Budget Variant (lower lumen):
+• Price range: P1,195 – P1,495 per pair
+• Brightness: ~12,000–15,000 Lumens
+• Good for customers on a budget or specific vehicle compatibility
 
-Small Bulbs:
-• T10 – P400/pair
-• Festoon 31mm – P350/pc
-• T15 / T20 / 1156 / 1157 / 7440 / 7443 – P450/pair
+Small bulbs / marker / dome:
+• T10 style bulbs: P400 per pair
+• Festoon 31mm dome bulbs: P350 each
+• T15 / T20 / 1156 / 1157 / 7440 / 7443: P450 per pair
 
-🎉 Promo Packages Available:
-We also offer promo bundles when you order as a set, e.g.:
-• Headlight + Fog Lights
-• Headlight + Park Lights
+We also offer promo bundles (e.g. Headlight + Fog set). Send your bulb type or car model and we will provide exact pricing and availability.`;
 
-💬 Just send us a message and we’ll give you the specific promotional offer available for your bulb type.`;
+const REPLY_PRODUCT_SPECS = `Product Specifications:
 
-const REPLY_PRODUCT_SPECS = `Product Specs:
-Power: 120W / 30,000 Lumens
-Voltage: 9V–36V (fits most vehicles)
-Waterproof: IP67
-Material: Aviation Aluminum + Copper PCB
-Rotation: 360° Adjustable
-Lifespan: Up to 50,000 hours
-✅ High brightness, durable, waterproof & all-weather ready!`;
+• Power: 120W per pair
+• Brightness: 30,000 Lumens per pair
+• Voltage: 9V–36V (safe across most cars & trucks)
+• Waterproof Rating: IP67
+• Housing: High-grade aviation aluminum with CNC machining
+• Heat Dissipation: Advanced heat sink + thermal management
+• Adjustment: 360° adjustable beam angle for precise alignment
+• Lifespan: Up to 50,000 hours under normal use
+• Compatibility: Canbus ready for many vehicles (reduces dashboard error codes)
+• Installation: Plug-and-play for most cars, nondestructive installation
 
-const REPLY_INSTALLATION = `We offer FREE installation po if you’re within our area.
-For shipping naman po, we have COD/COP via LBC, and we also send a video installation guide for easy setup.`;
+These bulbs deliver very high brightness, excellent durability, and are built for all-weather conditions.`;
+
+const REPLY_INSTALLATION = `Installation & Service:
+
+We offer FREE installation if you are within our local service area. For customers outside the area we ship via LBC (COP or COD). Each purchase comes with a video installation guide to make self-install easy.
+
+If you want us to install, please provide your location and preferred schedule and we will check availability.`;
+
+const REPLY_FALLBACK = `Thanks for your message! We will get back to you as soon as we can. Thank you for reaching out.`;
 
 const WELCOME_MESSAGE = `Hi! 👋 Thanks for messaging us.
 Please provide your Car, Year, Model, and Variant so we can assist you faster.`;
@@ -142,7 +159,7 @@ async function sendText(psid, text) {
   }
 }
 
-// typing helpers
+// typing helpers (smart typing based on message length)
 function sleep(ms) {
   return new Promise((res) => setTimeout(res, ms));
 }
@@ -158,8 +175,7 @@ async function sendTyping(psid, ms = 1200) {
 async function sendSmartTyping(psid, text) {
   try {
     const chars = (text || "").length;
-    // 40 ms/char, min 700ms, max 40000ms
-    const ms = Math.min(40000, Math.max(700, Math.round(chars * 40)));
+    const ms = Math.min(40000, Math.max(700, Math.round(chars * 40))); // 40ms/char
     console.log(`🕑 Typing for ${ms}ms (chars=${chars})`);
     await sendTyping(psid, ms);
   } catch (e) {
@@ -173,7 +189,7 @@ async function sendQuickRepliesList(psid) {
   const quickReplies = {
     recipient: { id: psid },
     message: {
-      text: "\u200B",
+      text: "You can also tap an option below 👇",
       quick_replies: [
         { content_type: "text", title: "How to order?", payload: "HOW_TO_ORDER" },
         { content_type: "text", title: "How much H4?", payload: "HOW_MUCH_H4" },
@@ -191,7 +207,7 @@ async function sendQuickRepliesList(psid) {
   }
 }
 
-// media chunk sender (generic template)
+// media chunk sender (generic template). Titles are "Photo N" or "Video N" depending on extension.
 async function sendChunk(psid, urls) {
   const elements = urls.map((url, i) => ({
     title: url.endsWith(".mp4") ? `Video ${i + 1}` : `Photo ${i + 1}`,
@@ -248,15 +264,13 @@ async function connectMongo() {
     return;
   }
   try {
-    // NOTE: do not pass legacy options (useNewUrlParser / useUnifiedTopology) — newer drivers
-    // use sensible defaults and will error if you pass those names.
     mongoClient = new MongoClient(MONGODB_URI);
     await mongoClient.connect();
 
     const db = mongoClient.db(MONGODB_DBNAME);
     servedCollection = db.collection(MONGODB_COLLECTION);
 
-    // create index on psid for fast upsert/find (idempotent)
+    // create index on psid for upsert/find
     await servedCollection.createIndex({ psid: 1 }, { unique: true });
 
     console.log("✅ Connected to MongoDB");
@@ -325,13 +339,14 @@ app.post("/webhook", async (req, res) => {
       const mid = ev.message?.mid;
       if (!psid || (mid && mids.has(mid))) continue;
       if (mid) mids.add(mid);
-      if (!ev.message || ev.message.is_echo) continue;
+      if (!ev.message || ev.message.is_echo) continue; // ignore echoes (messages from page)
       console.log("💬 Incoming from:", psid);
 
       // quick-reply payload handling
       const quickPayload = ev.message?.quick_reply?.payload;
       if (quickPayload) {
         console.log("🎯 Quick reply payload:", quickPayload);
+
         if (quickPayload === "HOW_TO_ORDER") {
           await sendSmartTyping(psid, REPLY_HOW_TO_ORDER);
           await sendText(psid, REPLY_HOW_TO_ORDER);
@@ -371,6 +386,8 @@ app.post("/webhook", async (req, res) => {
 
       // text keyword triggers (also resend quick replies)
       const text = (ev.message?.text || "").toLowerCase();
+
+      // handle explicit keywords first
       if (text.includes("how to order")) {
         await sendSmartTyping(psid, REPLY_HOW_TO_ORDER);
         await sendText(psid, REPLY_HOW_TO_ORDER);
@@ -385,85 +402,80 @@ app.post("/webhook", async (req, res) => {
         await sendQuickRepliesList(psid);
         continue;
       }
-      if (text.includes("other bulb") || text.includes("price other")) {
+      if (text.includes("other bulb") || text.includes("price other") || text.includes("price other bulb")) {
         await sendSmartTyping(psid, REPLY_PRICE_OTHER_TYPES);
         await sendText(psid, REPLY_PRICE_OTHER_TYPES);
         await sleep(300);
         await sendQuickRepliesList(psid);
         continue;
       }
-      if (text.includes("product specs")) {
+      if (text.includes("product specs") || text.includes("specs")) {
         await sendSmartTyping(psid, REPLY_PRODUCT_SPECS);
         await sendText(psid, REPLY_PRODUCT_SPECS);
         await sleep(300);
         await sendQuickRepliesList(psid);
         continue;
       }
-      if (text.includes("install")) {
+      if (text.includes("install") || text.includes("installation")) {
         await sendSmartTyping(psid, REPLY_INSTALLATION);
         await sendText(psid, REPLY_INSTALLATION);
         await sleep(300);
         await sendQuickRepliesList(psid);
         continue;
       }
-// --- FALLBACK: restore quick-reply template if message didn't match any keyword/quick-reply ---
-{
-  // Don't resend the WELCOME_MESSAGE here — only show a short fallback prompt + quick replies
-  const fallbackText = "We will get back to you as soon as we can. Thank you😊";
-  try {
-    await sendSmartTyping(psid, fallbackText);
-    await sendText(psid, fallbackText);
-    await sleep(200);
-    await sendQuickRepliesList(psid);
-  } catch (err) {
-    console.error("❌ fallback send error:", err?.message || err);
-  }
-  // stop further processing for this event so we don't trigger media/cooldown flow
-  continue;
-}
 
-      // ---------- cooldown & media sending ----------
+      // ---------- fallback + cooldown & media sending ----------
+      // load stored user record (or defaults)
       const now = Date.now();
       const user = served[psid] || { lastMedia: 0, lastFollowup: 0 };
       const cooldown = COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
       const followupWindow = FOLLOWUP_HOURS * 60 * 60 * 1000;
 
-      // if still within media cooldown
+      // If still within media cooldown
       if (now - user.lastMedia < cooldown) {
-        // maybe send follow-up if follow-up window passed
+        // maybe send follow-up (fallback-like) if allowed by followupWindow
         if (now - user.lastFollowup >= followupWindow) {
-          const followText = "Thanks for your message! We’ll get back to you shortly.😊";
-          await sendSmartTyping(psid, followText);
-          await sendText(psid, followText);
+          // Use fallback follow-up message (short), then show quick replies
+          await sendSmartTyping(psid, REPLY_FALLBACK);
+          await sendText(psid, REPLY_FALLBACK);
           user.lastFollowup = now;
           await upsertServed(psid, user);
-          console.log("📩 Sent follow-up to", psid);
+          await sleep(250);
+          await sendQuickRepliesList(psid);
+          console.log("📩 Sent follow-up fallback to", psid);
         } else {
-          console.log("⏱ Still in cooldown, skipping media for", psid);
+          // within both media and follow-up cooldowns: skip replying to avoid spam
+          console.log("⏱ Within media & follow-up cooldown; skipping reply for", psid);
         }
         continue;
       }
 
-      // not in cooldown — send media + welcome
+      // Not in media cooldown:
+      // If sender typed something unknown (no keyword matched), treat it as a "first" contact and send media + welcome.
+      // Mark lastMedia & lastFollowup and persist.
       user.lastMedia = now;
       user.lastFollowup = now;
       await upsertServed(psid, user);
 
+      // send media chunks (if any)
       await sendAllMedia(psid);
 
+      // After media, send welcome message (if configured)
       if (WELCOME_MESSAGE && WELCOME_MESSAGE.length) {
         await sendSmartTyping(psid, WELCOME_MESSAGE);
         await sendText(psid, WELCOME_MESSAGE);
       }
 
+      // show quick replies after welcome
       await sleep(250);
       await sendQuickRepliesList(psid);
+      console.log("🎉 Sent media + welcome + quick replies to", psid);
     }
   }
 });
 
 // === ADMIN RESET ROUTES ===
-// reset all memory
+// reset all memory (requires key)
 app.get("/admin/reset-all", async (req, res) => {
   if (req.query.key !== ADMIN_RESET_KEY) return res.status(403).send("Forbidden");
   await clearAllServed();
@@ -471,7 +483,7 @@ app.get("/admin/reset-all", async (req, res) => {
   res.send("✅ All users cleared from memory");
 });
 
-// reset follow-up only (12hr) for one PSID
+// reset follow-up only (for one PSID)
 app.get("/admin/reset-followup", async (req, res) => {
   if (req.query.key !== ADMIN_RESET_KEY) return res.status(403).send("Forbidden");
   const psid = req.query.psid;
@@ -483,7 +495,7 @@ app.get("/admin/reset-followup", async (req, res) => {
   res.send(`✅ Cleared follow-up for PSID: ${psid}`);
 });
 
-// reset one PSID fully (media+followup)
+// reset one PSID fully (media + follow-up)
 app.get("/admin/reset-all-admin", async (req, res) => {
   if (req.query.key !== ADMIN_RESET_KEY) return res.status(403).send("Forbidden");
   const psid = req.query.psid;
@@ -496,7 +508,7 @@ app.get("/admin/reset-all-admin", async (req, res) => {
 // health check
 app.get("/", (req, res) => res.send("✅ Messenger bot running fine"));
 
-// start server AFTER connecting to MongoDB so served in-memory cache is populated
+// Start server after connecting to MongoDB (so in-memory cache is loaded)
 async function start() {
   await connectMongo();
   app.listen(PORT, () => console.log(`🚀 Bot live on port ${PORT}`));

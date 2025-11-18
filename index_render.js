@@ -84,37 +84,24 @@ Please send:
 Once details are complete, we’ll confirm your order right away.
 Thank you! 🙏`;
 
-const REPLY_HOW_MUCH_H4 = `H4 Type LED Bulb
+const REPLY_HOW_MUCH_H4 = `🔥H4 Type LED Bulb
 
 Price: P2,495 per pair
 
-Product Specifications:
 • Power: 120W per pair
-• Brightness: 30,000 Lumens (pair)
-• Waterproof: IP67
-• Canbus Ready (no error for most vehicles)
-• 360° Adjustable beam angle
-• Lifespan: Up to 50,000 hours
-• Material: Aviation-grade aluminum housing with efficient heat sink
-
-This product is super bright, durable, waterproof and easy to install. If you need compatibility help, please tell us your car make, year and model.`;
+• Brightness: 30,000 Lumens (pair)`;
 
 const REPLY_PRICE_OTHER_TYPES = `For Other Bulb Types and Single Beam Bulbs:
 
-Standard High-Brightness Variant:
+High-Brightness Variant:
 • Price: P2,395 per pair
 • Brightness: 30,000 Lumens (pair)
-• Available types: H11, HB3 (9005), HB4 (9006), 9012, H7, H1, H3, H27 and others (please tell us your bulb code)
 
-Budget Variant (lower lumen):
-• Price range: P1,195 – P1,495 per pair
-• Brightness: ~12,000–15,000 Lumens
-• Good for customers on a budget or specific vehicle compatibility
+Available types: H11, HB3 (9005), HB4 (9006), 9012, H7, H1, H3, H27 and others (please tell us your bulb code)
 
 Small bulbs / marker / dome:
-• T10 style bulbs: P400 per pair
-• Festoon 31mm dome bulbs: P350 each
-• T15 / T20 / 1156 / 1157 / 7440 / 7443: P450 per pair
+• T10, Festoon 31mm dome, T15, T20
+from 350 to 500
 
 We also offer promo bundles (e.g. Headlight + Fog set). Send your bulb type or car model and we will provide exact pricing and availability.`;
 

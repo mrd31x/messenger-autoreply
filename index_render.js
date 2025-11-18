@@ -89,21 +89,19 @@ const REPLY_HOW_MUCH_H4 = `🔥H4 Type LED Bulb
 Price: P2,495 per pair
 
 • Power: 120W per pair
-• Brightness: 30,000 Lumens (pair)`;
+• Brightness: 30,000 Lumens`;
 
 const REPLY_PRICE_OTHER_TYPES = `For Other Bulb Types and Single Beam Bulbs:
 
-High-Brightness Variant:
+🔥High-Brightness Variant:
 • Price: P2,395 per pair
-• Brightness: 30,000 Lumens (pair)
+• Brightness: 30,000 Lumens
 
 Available types: H11, HB3 (9005), HB4 (9006), 9012, H7, H1, H3, H27 and others (please tell us your bulb code)
 
-Small bulbs / marker / dome:
+Small bulbs / Interio / Exterior:
 • T10, Festoon 31mm dome, T15, T20
-from 350 to 500
-
-We also offer promo bundles (e.g. Headlight + Fog set). Send your bulb type or car model and we will provide exact pricing and availability.`;
+From P350 to P500`;
 
 const REPLY_PRODUCT_SPECS = `Product Specifications:
 

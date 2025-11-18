@@ -99,9 +99,9 @@ const REPLY_PRICE_OTHER_TYPES = `For Other Bulb Types and Single Beam Bulbs:
 
 Available types: H11, HB3 (9005), HB4 (9006), 9012, H7, H1, H3, H27 and others (please tell us your bulb code)
 
-Small bulbs / Interio / Exterior:
-• T10, Festoon 31mm dome, T15, T20
-From P350 to P500`;
+Small bulbs:
+• Interio & Exterior Lights
+• From P350 to P500`;
 
 const REPLY_PRODUCT_SPECS = `Product Specifications:
 

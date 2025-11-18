@@ -97,26 +97,23 @@ const REPLY_PRICE_OTHER_TYPES = `For Other Bulb Types and Single Beam Bulbs:
 • Price: P2,395 per pair
 • Brightness: 30,000 Lumens
 
-Available types: H11, HB3 (9005), HB4 (9006), 9012, H7, H1, H3, H27 and others (please tell us your bulb code)
+Available types: H11, HB3 (9005), HB4 (9006), 9012, H7, H1, H3, H27, etc
 
 Small bulbs:
-• Interio & Exterior Lights
+• T10, FESTOON, T15, T20, ETC
 • From P350 to P500`;
 
 const REPLY_PRODUCT_SPECS = `Product Specifications:
 
 • Power: 120W per pair
 • Brightness: 30,000 Lumens per pair
-• Voltage: 9V–36V (safe across most cars & trucks)
+• Voltage: 9V–36V
 • Waterproof Rating: IP67
-• Housing: High-grade aviation aluminum with CNC machining
-• Heat Dissipation: Advanced heat sink + thermal management
-• Adjustment: 360° adjustable beam angle for precise alignment
-• Lifespan: Up to 50,000 hours under normal use
-• Compatibility: Canbus ready for many vehicles (reduces dashboard error codes)
-• Installation: Plug-and-play for most cars, nondestructive installation
-
-These bulbs deliver very high brightness, excellent durability, and are built for all-weather conditions.`;
+• Aviation aluminum material
+• 360° adjustable
+• Lifespan: 50,000 hours
+• Canbus ready
+• Plug-and-play`;
 
 const REPLY_INSTALLATION = `Installation & Service:
 

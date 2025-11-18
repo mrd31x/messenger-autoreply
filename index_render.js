@@ -67,11 +67,12 @@ Here’s how to order:
 🚚 Shipping via LBC
 
 💳 Payment Options:
-• COP — Pay at LBC branch when you pick up your package
+• COP — Pay at LBC branch upon pick up your package
 • COD — Pay the rider upon delivery
 
 💸 Shipping Fee (approx):
-COP ₱120–₱150 | COD ₱185–₱230
+COP ₱120–₱150
+COD ₱185–₱230
 (depends on location & package size)
 
 Please send:
@@ -79,10 +80,7 @@ Please send:
 • Contact No.
 • Address
 • Zip Code
-• LBC Branch (for COP)
-
-Once details are complete, we’ll confirm your order right away.
-Thank you! 🙏`;
+• LBC Branch (for COP)`;
 
 const REPLY_HOW_MUCH_H4 = `🔥H4 Type LED Bulb
 
@@ -94,19 +92,20 @@ Price: P2,495 per pair
 const REPLY_PRICE_OTHER_TYPES = `For Other Bulb Types and Single Beam Bulbs:
 
 🔥High-Brightness Variant:
+
 • Price: P2,395 per pair
 • Brightness: 30,000 Lumens
 
-Available types: H11, HB3 (9005), HB4 (9006), 9012, H7, H1, H3, H27, etc
+Bulb Types: H11, HB3, HB4, 9012, H7, H1, H3, H27, etc
 
 Small bulbs:
-• T10, FESTOON, T15, T20, ETC
+• T10, FESTOON, T15, T20
 • From P350 to P500`;
 
 const REPLY_PRODUCT_SPECS = `Product Specifications:
 
 • Power: 120W per pair
-• Brightness: 30,000 Lumens per pair
+• Brightness: 30,000 Lumens
 • Voltage: 9V–36V
 • Waterproof Rating: IP67
 • Aviation aluminum material

@@ -35,19 +35,19 @@ const MONGODB_DBNAME = process.env.MONGODB_DBNAME || "messenger_autoreply";
 const MONGODB_COLLECTION = process.env.MONGODB_COLLECTION || "served_users";
 
 // === FILE PATHS ===
-const MANIFEST_PATH = path.join(__dirname, "cloudinary_manifest.json");
+const MANIFEST_PATH = path.join(__dirname, "bunny_manifest.json");
 
 // === LOAD MEDIA LIST ===
 let mediaUrls = [];
 try {
   if (fs.existsSync(MANIFEST_PATH)) {
     mediaUrls = JSON.parse(fs.readFileSync(MANIFEST_PATH, "utf8"));
-    console.log(`✅ Loaded ${mediaUrls.length} Cloudinary media files`);
+    console.log(`✅ Loaded ${mediaUrls.length} Bunny media files`);
   } else {
-    console.log("⚠️ cloudinary_manifest.json not found (no media loaded)");
+    console.log("⚠️ bunny_manifest.json not found (no media loaded)");
   }
 } catch (e) {
-  console.error("❌ Failed to read cloudinary_manifest.json:", e.message);
+  console.error("❌ Failed to read bunny_manifest.json:", e.message);
 }
 
 // In-memory cache for served users (persisted to MongoDB)
